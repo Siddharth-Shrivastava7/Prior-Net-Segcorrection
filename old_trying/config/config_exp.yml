@@ -1,0 +1,157 @@
+note: 'train'
+
+# configs of data  
+model: 'toy_exp_res18unet_3ch_wo_pretrain'
+# model: trial
+train: True
+multigpu: False
+fixbn: False  # check this also ..  chg 
+fix_seed: True
+screen: True
+# small: False
+# restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/unetresenc_dannet_patch_perturb.pth'   
+restore_from: None
+# one_ip_channel: False 
+rgb_save: True
+num_ip_channels: 3
+channel3: True
+
+# num_patch_perturb: 20
+# patch_size: 100
+num_patch_perturb: 100
+patch_size: 10
+# method_train: 'perturb' 
+# method_train: 'perturb_discrete_patches'
+# method_train: 'perturb_both'
+# error_inds: True
+# model_pred: 'dannet_error_patch'
+# # model_pred: 'dannet'
+# shuffle: True # check this
+# one_hot_ip: False 
+# one_channel: False
+# restore_reconst: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/toy_exp_autoenc_reconst_bt8.pth'
+
+## eval 
+eval_restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/acdc_dannet_1010_100.pth'
+# # method_eval: 'perturb_discrete_patches'
+# # method_eval: 'perturb'
+# # method_eval: 'perturb_both' 
+# # method_eval: 'straight' 
+# method_eval: 'model_onehot'
+# # method_eval: 'gt_correct'
+method_eval: 'dannet_perturb_gt'    
+save_path: 'dannet_perturb_gt_1010_100_2'
+
+# dannet model pred 
+model_dannet: 'PSPNet'
+restore_from_da: '/home/sidd_s/scratch/saved_models/DANNet/dannet_psp.pth'
+restore_light_path: '/home/sidd_s/scratch/saved_models/DANNet/dannet_psp_light.pth'
+num_class: 19
+
+## cityscapes model pred 
+ckpt: '/home/sidd_s/scratch/saved_models/cityscapes/best_deeplabv3plus_resnet101_cityscapes_os16.pth.tar'
+
+# Optimizers
+learning_rate: 1.0e-2
+epochs: 500 #chg
+weight_decay: 0.0005
+momentum: 0.9 
+power: 0.9 
+
+# Logging 
+print_freq: 1 ## epochs   
+save_freq: 1 ## epochs
+tensorboard: True
+val: True
+val_freq: 5 # 372 ..after one epoch for cityscapes train set (2975) with batch 8
+
+# unet model 
+## direct list not specifying since in init there is restriction that dict value should only be received 
+# unet: {
+#         enc_chs: [1, 64, 128, 256, 512 , 1024 ], 
+#         dec_chs: [1024, 512, 256, 128, 64],
+#         out_chs: 1, 
+# } 
+
+## loss 
+# mse: False
+
+# Dataset 
+train: 'acdc_train_label' #chg for pred label 
+# train: 'perturb_bdd_city' #chg for pred label
+# train: 'acdc_bdd_city' #chg for pred label 
+# train: 'bdd_city'
+val: 'acdc_val_label' #chg
+# train: 'bdd_city_trval' 
+# val: 'bdd_city_trval'
+worker: 4
+batch_size: 4 #chg  
+
+# # reconstruction
+# rec_num_ip_channels: 19  
+# rec_num_out_channels: 19  
+# rec_base_channels:  16 
+# rec_max_iter_train: 2000
+
+# # denoise 
+# den_num_ip_channels: 128
+# den_num_out_channels: 128 
+# den_num_ip_channels: 128
+# den_max_iter_train: 1000
+
+# Model hypers
+init_weight: '/home/sidd_s/scratch/saved_models/city_pretrained_deeplab/model410_city_deeplabv2.pth' 
+
+snapshot: '../scratch/saved_models/acdc/dannet'
+log: './log/'
+
+cityscapes: {
+        data_dir: '../scratch/dataset/cityscapes/',
+        data_list: './dataset/list/cityscapes/train.txt',
+        input_size: [1024, 512]
+        }
+cityscapes_val: {
+        data_dir: '../scratch/dataset/cityscapes/',
+        data_list: './dataset/list/cityscapes/val.txt',
+        input_size: [1024, 512]
+        }
+dark_zurich_val: { 
+        data_dir: '/home/cse/staff/sid97.cstaff/scratch/data/dark_zurich/val/',
+        data_list: './dataset/dark_zurich/val.txt',
+        input_size: [1920, 1080]
+        }
+acdc_train_label: {
+        data_dir:  '/home/sidd_s/scratch/dataset',
+        data_list: './dataset/list/acdc/acdc_trainrgb.txt',
+        input_size: [1920, 1080]
+}
+acdc_val_label: {
+        data_dir: '/home/sidd_s/scratch/dataset',
+        data_list: './dataset/list/acdc/acdc_valrgb.txt',
+        input_size: [1920, 1080]
+}
+
+darkzurich: {
+        data_dir: '/home/sidd_s/scratch/dataset/dark_zurich_val',
+        data_list: './dataset/list/darkzurich/val.txt'
+}  
+
+perturb_bdd_city: {
+        data_dir: ['/home/sidd_s/scratch/dataset/texture_variant/bdd_acdc', '/home/sidd_s/scratch/dataset/texture_variant/cityscapes_acdc'],
+        data_list: ['/home/sidd_s/Prior_Net/dataset/list/bdd/bdd_train.txt', '/home/sidd_s/Prior_Net/dataset/list/cityscapes/train.txt']
+}    
+
+acdc_bdd_city: { 
+        data_dir: ['/home/sidd_s/scratch/dataset', '/home/sidd_s/scratch/dataset/bdd100k_seg/bdd100k/seg/images/train', '/home/sidd_s/scratch/dataset/cityscapes'], 
+        data_list: ['./dataset/list/acdc/acdc_trainrgb.txt', '/home/sidd_s/Prior_Net/dataset/list/bdd/bdd_train.txt', './dataset/list/cityscapes/train.txt']
+}
+
+bdd_city: { 
+        data_dir: ['/home/sidd_s/scratch/dataset/bdd100k_seg/bdd100k/seg/images/train', '/home/sidd_s/scratch/dataset/cityscapes'], 
+        data_list: ['/home/sidd_s/Prior_Net/dataset/list/bdd/bdd_train.txt', './dataset/list/cityscapes/train.txt']
+} 
+
+bdd_city_trval: { 
+        data_dir: ['/home/sidd_s/scratch/dataset/bdd100k_seg/bdd100k/seg/images/', '/home/sidd_s/scratch/dataset/cityscapes'], 
+        data_list: ['/home/sidd_s/Prior_Net/dataset/list/bdd/', './dataset/list/cityscapes/']
+}
