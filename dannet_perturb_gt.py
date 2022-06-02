@@ -21,6 +21,7 @@ from dataset.network.dannet_pred import pred
 import network 
 import argparse 
 from torchsummary import summary 
+import json
 
 
 parser = argparse.ArgumentParser() 
@@ -471,11 +472,12 @@ class CrossEntropy2d(nn.Module):
         assert predict.size(3) == target.size(2), "{0} vs {1} ".format(predict.size(3), target.size(3))
         n, c, h, w = predict.size()
         
-        target_mask = (target >= 0) * (target != self.ignore_label) 
+        target_mask = (target >= 0) * (target != self.ignore_label)  
         
         if self.ignore_classes:
+            self.ignore_classes = json.loads(self.ignore_classes[0])  # to convert string of list to int of list 
             ## have to ignore classes  
-            for ig_cl in self.ignore_classes:
+            for ig_cl in self.ignore_classes: 
                 target_mask = target_mask * (target!= ig_cl) 
                    
         target = target[target_mask]
