@@ -44,12 +44,18 @@ parser.add_argument("--data_dir", type=str, default='/home/sidd_s/scratch/datase
                         help='train data directory') 
 parser.add_argument("--data_list", type=str, default='./dataset/list/acdc/acdc_valrgb.txt',
                         choices = ['./dataset/list/acdc/acdc_valrgb.txt', './dataset/list/acdc/acdc_trainrgb.txt'],help='list of names of validation files')  
-parser.add_argument("--input_size", '-ip_sz', type=int, nargs="+", default=[1920, 1080],
-                        help='actual input size')  
+# parser.add_argument("--input_size", '-ip_sz', type=int, nargs="+", default=[1920, 1080],
+#                         help='actual input size')  
 parser.add_argument("--worker", type=int, default=4)   
 parser.add_argument("--set", type=str, default='val')       
-parser.add_argument("--synthetic_perturb", type=str, default='synthetic_new_manual_dannet_20n_100p',
+parser.add_argument("--synthetic_perturb", type=str, default='synthetic_manual_dannet_20n_100p_1024im',
                         help='evalutating technique')
+parser.add_argument("--img_size", type=int, default=512,  # may be req 
+                        help="size of image or label, which is to be trained") 
+parser.add_argument("--collague", action='store_true', default=False,
+                        help="forming collague")
+parser.add_argument("--is_synthetic", action='store_true', default=False,
+                        help="which color to use for synthetic maps")
 
 args = parser.parse_args()
 
@@ -121,11 +127,11 @@ class BaseDataSet(data.Dataset):
             else: 
                 image = Image.open(datafiles["img"]).convert('RGB') 
                 
-                transforms_compose_img = transforms.Compose([transforms.Resize((512,512)), transforms.ToTensor(), transforms.Normalize(*mean_std)]) 
+                transforms_compose_img = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size)), transforms.ToTensor(), transforms.Normalize(*mean_std)]) 
                 img_trans = transforms_compose_img(image) 
                 image = torch.tensor(np.array(img_trans)).float() 
                 
-                transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)]) 
+                transforms_compose_label = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size),interpolation=Image.NEAREST)]) 
                 label = Image.open(datafiles["label"]) 
                 label = transforms_compose_label(label)   
                 label = torch.tensor(np.array(label))    
@@ -253,31 +259,29 @@ class BaseTrainer(object):
                             = seg_pred[:, randx: randx + self.args.patch_size, randy:randy+self.args.patch_size]
             
             ## perturbed seg label
-            gt_3ch_perturb = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=False))  
+            gt_3ch_perturb = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=args.is_synthetic))  
             gt_3ch_perturb = np.array(gt_3ch_perturb) 
             # path = os.path.join(self.args.data_dir, 'acdc_trainval/rgb_anon/night','synthetic', self.args.set, 'synthetic_manual_dannet_collague', name)
             # gt_3ch.save(path)
-            
-            ## perturbed seg label synthetic
-            gt_3ch_perturb_synthetic = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=True))  
-            # gt_3ch_perturb_synthetic = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=False)) # once trying w/o the any synthetic colors   
-            gt_3ch_perturb_synthetic = np.array(gt_3ch_perturb_synthetic) 
-            
-            ## original seg label
-            gt_3ch = torch.tensor(label_img_to_color(seg_label[0], synthetic=False))  
-            gt_3ch = np.array(gt_3ch) 
-            
-            ## dannet predictions 
-            dannet_pred = torch.tensor(label_img_to_color(seg_pred[0], synthetic=False)) 
-            dannet_pred = np.array(dannet_pred)
                 
-            ## saving collague and perturbed seg pred which is to be used 
-            imgg = np.hstack((gt_3ch, gt_3ch_perturb)) 
-            imgg2 = np.hstack((dannet_pred, gt_3ch_perturb_synthetic))
-            imgg3 = np.vstack((imgg, imgg2)) 
-            imgg = Image.fromarray(imgg3) 
-            path = os.path.join(self.args.data_dir, 'acdc_trainval/rgb_anon/night', 'synthetic', self.args.set, 'synthetic_manual_dannet_collague', args.synthetic_perturb, name)
-            imgg.save(path)  
+            ## saving collague and perturbed seg pred which is to be used  
+            if args.collague:
+                ## perturbed seg label synthetic
+                gt_3ch_perturb_synthetic = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=args.is_synthetic))  
+                gt_3ch_perturb_synthetic = np.array(gt_3ch_perturb_synthetic) 
+                
+                ## original seg label
+                gt_3ch = torch.tensor(label_img_to_color(seg_label[0], synthetic=args.is_synthetic))  
+                gt_3ch = np.array(gt_3ch) 
+                ## dannet predictions 
+                dannet_pred = torch.tensor(label_img_to_color(seg_pred[0], synthetic=args.is_synthetic)) 
+                dannet_pred = np.array(dannet_pred)
+                imgg = np.hstack((gt_3ch, gt_3ch_perturb)) 
+                imgg2 = np.hstack((dannet_pred, gt_3ch_perturb_synthetic))
+                imgg3 = np.vstack((imgg, imgg2)) 
+                imgg = Image.fromarray(imgg3) 
+                path = os.path.join(self.args.data_dir, 'acdc_trainval/rgb_anon/night', 'synthetic', self.args.set, 'synthetic_manual_dannet_collague', args.synthetic_perturb, name)
+                imgg.save(path)  
             
             ## saving the synthetic seg pred
             
@@ -293,9 +297,8 @@ class predictor(BaseTrainer):
         self.da_model, self.lightnet, self.weights = pred(self.args.num_classes, self.args.model_dannet, self.args.restore_from_da, self.args.restore_light_path)  
         self.da_model = self.da_model.eval() 
         self.lightnet = self.lightnet.eval() 
-        self.interp = nn.Upsample(size=(512, 512), mode='bilinear', align_corners=True)
         self.interp_whole = nn.Upsample(size=(1080, 1920), mode='bilinear', align_corners=True)
-        self.interp = nn.Upsample(size=(512, 512), mode='bilinear', align_corners=True)
+        self.interp = nn.Upsample(size=(self.args.img_size, self.args.img_size), mode='bilinear', align_corners=True)
 
     def predict(self):        
         self.validate() 

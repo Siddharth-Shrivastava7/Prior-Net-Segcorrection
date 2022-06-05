@@ -613,14 +613,13 @@ class BaseTrainer(object):
                     else:
                         _, output2 = self.da_model(enhancement)
 
-                ## weighted cross entropy for which they have been used so here not using it in the training so ignoring for now 
+                ## weighted cross entropy for which they have been used so here not using it in the training so ignoring for now   
                 weights_prob = self.weights.expand(output2.size()[0], output2.size()[3], output2.size()[2], 19)
                 weights_prob = weights_prob.transpose(1, 3) 
                 output2 = output2 * weights_prob 
 
                 output2 = self.interp(output2).cpu().numpy() 
                 seg_pred = torch.tensor(output2) 
-
                 # print(pred.shape)  
                 seg_pred = F.softmax(seg_pred, dim=1) 
                 
@@ -664,12 +663,24 @@ class BaseTrainer(object):
             
             # seg_preds = torch.argmax(label_perturb_tensor, dim=1) 
             # pertub dannet gt
-            seg_preds = torch.tensor(color_to_label(image[0], self.args)) 
+            seg_preds = torch.tensor(color_to_label(image[0], self.args))
+            ## ignore classes blacking out  
+            if self.args.ignore_classes:   
+                ignore_classes = json.loads(args.ignore_classes[0]) 
+                ip_imglb = color_to_label(image[0], self.args)
+                for ig_cl in ignore_classes: 
+                    seg_preds[ip_imglb==ig_cl] = 19 # black region 
+            
             seg_preds[seg_label[0]==255] = 19 # ignore black region             
             seg_preds =  label_img_to_color(seg_preds)  
 
-            ## correction output
+            ## correction output              
             seg_corrects = torch.argmax(seg_correct, dim=1)[0] 
+            ## paste it back the ignore regions 
+            if self.args.ignore_classes:   
+                for ig_cl in ignore_classes: 
+                    seg_corrects[ip_imglb==ig_cl] = seg_label[0][ip_imglb==ig_cl].to(torch.long).cuda() # black region   
+            
             seg_corrects[seg_label[0]==255] = 19 # ignore black region
             seg_corrects = label_img_to_color(seg_corrects) 
             

@@ -23,7 +23,6 @@ import argparse
 from torchsummary import summary 
 import json
 
-
 parser = argparse.ArgumentParser() 
 
 parser.add_argument("--gpu_id", type=str, default='1',
@@ -73,7 +72,7 @@ parser.add_argument("--val_data_dir", '-val_dr', type=str, default='/home/sidd_s
                         help='train data directory') 
 parser.add_argument("--val_data_list", '-val_dr_lst', type=str, default='./dataset/list/acdc/acdc_valrgb.txt',
                         choices = ['./dataset/list/acdc/acdc_valrgb.txt'],help='list of names of validation files')   
-parser.add_argument("--batch_size", type=int, default=8)  # may be req 
+parser.add_argument("--batch_size", type=int, default=4)  # may be req 
 parser.add_argument("--worker", type=int, default=4)   
 parser.add_argument("--train_dataset", '-tr_nm', type=str, default='synthetic_manual_train_label',
                         choices = ['acdc_train_label','synthetic_manual_train_label', 'synthetic_acdc_train_label', 'dannet_pred_train'], help='train datset name') 
@@ -84,20 +83,29 @@ parser.add_argument("--epochs", type=int, default=1500)   # may be req
 parser.add_argument("--snapshot", type=str, default='../scratch/saved_models/acdc/dannet',
                         help='model saving directory')   
 parser.add_argument("--exp", '-e', type=int, default=1, help='which exp to run')                     
-parser.add_argument("--synthetic_perturb", type=str, default='synthetic_new_manual_dannet_20n_100p', # using synthetic cityscapes manual color of acdc night images w/o any perturbation for learning first color mapping only then performing fine tunnnig over it when noise are introduced in it.
+parser.add_argument("--synthetic_perturb", type=str, default='synthetic_new_manual_dannet_20n_100p', # manual color decided acc to seperablity b/w classes
                         help='evalutating technique')
 parser.add_argument("--end_learning_rate", type=float, default=1e-5, # may be req  
                         help="end learning rate required in the lr scheduling") 
 parser.add_argument("--power", type=float, default=0.9,  
                         help="power to be used in learning rate scheduling")    
 parser.add_argument("--restore_from_color_mapping", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet/old_models/deeplab+_synthetic_cityscapes_acdc_bt8_adam_lr3e-4_endlr1e-5_exp7.pth',
-                        help='prior net trained model path') # /home/sidd_s/scratch/saved_models/acdc/dannet/deeplab+_synthetic_cityscapes_acdc_bt8_adam_lr3e-4_endlr1e-5_exp7.pth
+                        help='prior net trained model path') 
 parser.add_argument("--weighted_ce", '-wce',action='store_true', default=False,
                         help="multigpu training") 
 parser.add_argument("--norm",action='store_true', default=False,
                         help="normalisation of the image")
 parser.add_argument("--ignore_classes", nargs="+", default=[],  
-                        help="ignoring classes...blacking out those classes")
+                        help="ignoring classes...blacking out those classes") 
+parser.add_argument("--img_size", type=int, default=512,  # may be req 
+                        help="size of image or label, which is to be trained")  
+parser.add_argument("--naive_weighting", action='store_true', default=False,
+                        help="naive weighting in ce loss") 
+parser.add_argument("--dannet_acdc_weighting",action='store_true', default=False,
+                        help="dannet type of acdc prediction weighting") 
+parser.add_argument("--scheduler",action='store_true', default=False,
+                        help="lr scheduling while training") 
+
 
 args = parser.parse_args()
 
@@ -190,7 +198,7 @@ class BaseDataSet(data.Dataset):
         datafiles = self.files[index]
         name = datafiles["name"]
         
-        transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)])     
+        transforms_compose_label = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size),interpolation=Image.NEAREST)])     
         mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  ## image net mean and std  
         try:  
             if self.dataset == 'acdc_train_label' or self.dataset == 'acdc_val_label': 
@@ -222,7 +230,7 @@ class BaseDataSet(data.Dataset):
                     label = torch.tensor(np.array(label))   
             
             elif ('synthetic' and 'manual') or ('dannet' and 'pred') in self.dataset:  
-                image = Image.open(datafiles["img"]).convert('RGB')
+                image = Image.open(datafiles["img"]).convert('RGB') 
                 
                 if self.args.norm: 
                     transforms_compose_img = transforms_compose_img = transforms.Compose([ 
@@ -240,11 +248,11 @@ class BaseDataSet(data.Dataset):
                 else: 
                     label = Image.open(datafiles["label"]) 
                     label = transforms_compose_label(label) 
-                    label = torch.tensor(np.array(label))  
-                    
+                    label = torch.tensor(np.array(label))   
+                                     
             elif 'synthetic' and 'acdc' in self.dataset: 
                 transforms_compose_img = transforms.Compose([
-                        transforms.Resize((512, 512)),
+                        transforms.Resize((self.args.img_size, self.args.img_size)),
                     ]) 
                 if self.set == 'val':
                     image = Image.open(datafiles["img"]).convert('RGB')  
@@ -360,7 +368,6 @@ def label_img_to_color(img):
     return img_color
 
 
-
 class BaseTrainer(object):
     def __init__(self, models, optimizers, loaders, args,  writer):
         self.model = models
@@ -384,8 +391,7 @@ class BaseTrainer(object):
         testloader = init_val_data(self.args) 
         
         for i_iter, batch in tqdm(enumerate(testloader)):
-            image, seg_label, name = batch
-            
+            image, seg_label, name = batch 
             if self.args.val_dataset == 'acdc_val_label':
                 ## perturbation 
                 with torch.no_grad():
@@ -434,11 +440,11 @@ class BaseTrainer(object):
             seg_pred = self.model(label_perturb_tensor.float().cuda()) 
             seg_label = seg_label.long().cuda() # cross entropy   
             
-            if self.args.weighted_ce:
-                loss = nn.CrossEntropyLoss(ignore_index=255) 
-            else:
+            if self.args.ignore_classes:
                 # black out few classes 
-                loss = CrossEntropy2d(ignore_classes=args.ignore_classes)   
+                loss = CrossEntropy2d(ignore_classes=args.ignore_classes)  
+            else:
+                loss = nn.CrossEntropyLoss(ignore_index=255) 
                 
             seg_loss = loss(seg_pred, seg_label)   
             total_loss += seg_loss.item()
@@ -494,7 +500,7 @@ class Trainer(BaseTrainer):
         self.da_model, self.lightnet, self.weights = pred(self.args.num_classes, self.args.model_dannet, self.args.restore_from_da, self.args.restore_light_path)  
         self.da_model = self.da_model.eval() 
         self.lightnet = self.lightnet.eval() 
-        self.interp = nn.Upsample(size=(512, 512), mode='bilinear', align_corners=True)
+        self.interp = nn.Upsample(size=(self.args.img_size, self.args.img_size), mode='bilinear', align_corners=True)
         self.interp_whole = nn.Upsample(size=(1080, 1920), mode='bilinear', align_corners=True)
         
     def iter(self, batch):
@@ -554,16 +560,29 @@ class Trainer(BaseTrainer):
         seg_label = seg_label.long().cuda() # cross entropy  
         
         if self.args.weighted_ce: 
-            ## weighted cross entropy loss 
-            weights = torch.log(torch.FloatTensor([0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341,
-                                            0.00207795, 0.0055127, 0.15928651, 0.01157818, 0.04018982, 0.01218957,
-                                            0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,
-                                                0.00413907])).cuda()
-            weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.05 + 1.0 
-            loss = nn.CrossEntropyLoss(ignore_index=255, weight=weights) 
+            ## weighted cross entropy loss         
+            if self.args.naive_weighting:   
+                weights = {0: 0.30354092597961424, 1: 0.0736604881286621, 2: 0.17741899490356444, 3: 0.01694552421569824, 4: 0.012325115203857422, 5: 0.00943770408630371, 6: 0.0021120643615722655, 7: 0.003739910125732422, 8: 0.11350025177001953, 9: 0.006554098129272461, 10: 0.14367461204528809, 11: 0.0014812946319580078, 12: 0.0003917694091796875, 13: 0.021362504959106444, 14: 0.00021363258361816405, 15: 0.0021049118041992186, 16: 0.0072266006469726566, 17: 0.00041659355163574217, 18: 0.0007854843139648437} 
+                weights = torch.FloatTensor([weights[key] for key in weights]).cuda() 
+                 
+            elif self.args.dannet_acdc_weighting:  
+                weights = {0: 0.30354092597961424, 1: 0.0736604881286621, 2: 0.17741899490356444, 3: 0.01694552421569824, 4: 0.012325115203857422, 5: 0.00943770408630371, 6: 0.0021120643615722655, 7: 0.003739910125732422, 8: 0.11350025177001953, 9: 0.006554098129272461, 10: 0.14367461204528809, 11: 0.0014812946319580078, 12: 0.0003917694091796875, 13: 0.021362504959106444, 14: 0.00021363258361816405, 15: 0.0021049118041992186, 16: 0.0072266006469726566, 17: 0.00041659355163574217, 18: 0.0007854843139648437} 
+                weights = torch.log(torch.FloatTensor([weights[key] for key in weights])).cuda() 
+                weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.05 + 1.0 
+            else: 
+                # cityscapes weight propotion 
+                weights = torch.log(torch.FloatTensor([0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341,
+                                                0.00207795, 0.0055127, 0.15928651, 0.01157818, 0.04018982, 0.01218957,
+                                                0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,
+                                                    0.00413907])).cuda() 
+                # 
+                weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.05 + 1.0  
             
-        else:
+            loss = nn.CrossEntropyLoss(ignore_index=255, weight=weights) 
+        elif self.args.ignore_classes:
             loss = CrossEntropy2d(ignore_classes=args.ignore_classes) 
+        else: 
+            loss = nn.CrossEntropyLoss(ignore_index=255)
         
         seg_loss = loss(seg_pred, seg_label)        
         self.losses.seg_loss = seg_loss
@@ -595,9 +614,10 @@ class Trainer(BaseTrainer):
         for epoch in tqdm(range(self.args.epochs)):
             epoch_infor = ('epoch = {:6d}/{:6d}, exp = {}'.format(epoch, int(self.args.epochs), self.args.save_writer_name))
             
-            print(epoch_infor)
-            scheduler = PolynomialLRDecay(self.optim, max_decay_steps=max_decay_steps, args=self.args) 
-            scheduler.step(epoch) 
+            print(epoch_infor) 
+            if args.scheduler: 
+                scheduler = PolynomialLRDecay(self.optim, max_decay_steps=max_decay_steps, args=self.args) 
+                scheduler.step(epoch) 
 
             for i_iter, batch in tqdm(enumerate(self.loader)):
                 self.optim.zero_grad()

@@ -1,0 +1,63 @@
+Initialising the label count:>>
+> /home/sidd_s/Prior-Net-Segcorrection/acdc_class_weights.py(148)validate()
+-> for cls in range(19):
+(Pdb) torch.Size([512, 512])
+(Pdb) defaultdict(<class 'int'>, {})
+(Pdb) *** SyntaxError: invalid syntax
+(Pdb) (Pdb) *** SyntaxError: invalid syntax
+(Pdb) (Pdb) defaultdict(<class 'int'>, {tensor([[False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        ...,
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False]]): 2, tensor([[False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        ...,
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False]]): 2})
+(Pdb) defaultdict(<class 'int'>, {tensor([[False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        ...,
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False]]): 2, tensor([[False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        ...,
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False]]): 2})
+(Pdb) (Pdb) defaultdict(<class 'int'>, {tensor([[False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        ...,
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False]]): 2, tensor([[False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        ...,
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False]]): 2, 0: 1})
+(Pdb) *** SyntaxError: invalid syntax
+(Pdb) (Pdb) defaultdict(<class 'int'>, {tensor([[False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        ...,
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False]]): 2, tensor([[False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        ...,
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False],
+        [False, False, False,  ..., False, False, False]]): 2, 0: 4})
+(Pdb) *** NameError: name 'cls' is not defined
+(Pdb) *** SyntaxError: invalid syntax
+(Pdb) 
