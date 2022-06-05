@@ -51,10 +51,26 @@ def main_multi(args_multi):
     
     if args_multi.exp == 6: 
         args6 = deepcopy(args)
-        args6.batch_size = 1
-        args6.gpu_id = '6'
-        args6.save_writer_name = 'colored_deeplabv3+_batch_1'
+        args6.synthetic_perturb = 'synthetic_manual_dannet_20n_100p_1024im' 
+        args6.gpu_id = '2'
+        args6.img_size = 1024
+        args6.restore_from_color_mapping = 'None'
+        args6.weighted_ce = True 
+        args6.dannet_acdc_weighting = True
+        args6.save_writer_name = 'colored_deeplabv3+_1024_weighted_ce' 
         main(args= args6) 
+    
+    if args_multi.exp == 7: 
+        args7 = deepcopy(args)
+        args7.synthetic_perturb = 'synthetic_manual_dannet_20n_100p_1024im' 
+        args7.gpu_id = '3'
+        args7.img_size = 1024
+        args7.restore_from_color_mapping = 'None'
+        args7.weighted_ce = True 
+        args7.dannet_acdc_weighting = True
+        args7.scheduler = True
+        args7.save_writer_name = 'colored_deeplabv3+_1024_weighted_ce_scheduler' 
+        main(args= args7) 
     
 if __name__ == '__main__':  
     main_multi(args_multi)

@@ -78,7 +78,7 @@ parser.add_argument("--save_path", type=str, default='synthetic_new_manual_danne
 parser.add_argument("--norm",action='store_true', default=False,
                         help="normalisation of the image")
 parser.add_argument("--ignore_classes", nargs="+", default=[],  
-                        help="ignoring classes...blacking out those classes")
+                        help="ignoring classes...blacking out those classes, generally [5,7,11,12,17]")
 
 args = parser.parse_args()
 
