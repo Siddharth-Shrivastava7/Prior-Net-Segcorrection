@@ -251,11 +251,11 @@ class PadImage(object):
 
 class RandomHorizontallyFlip(object):
     def __call__(self, img, mask):
+        
         if isinstance(mask, tuple):
             mask, weight = mask
         else:
             weight = None
-
         if weight is None:
             if random.random() < 0.5:
                 return img.transpose(Image.FLIP_LEFT_RIGHT), mask.transpose(

@@ -8,10 +8,12 @@ def main_multi(args_multi):
     # 1st run arguments   
     if args_multi.exp== 1:   
         args1 = deepcopy(args)  
-        args1.synthetic_perturb = 'synthetic_manual_dannet_20n_100p_1024im_synthetic' 
+        args1.synthetic_perturb = 'synthetic_manual_dannet_20n_100p_1024im' 
         args1.gpu_id = '1'
-        args1.img_size = 1024
-        args1.save_writer_name = 'colored_deeplabv3+_1024_synthetic_color' 
+        args1.img_size = 1024 
+        args1.restore_from_color_mapping = 'None'
+        args1.ignore_classes = [6,7,11,12,17,18]
+        args1.save_writer_name = 'colored_deeplabv3+_1024_masking' 
         main(args= args1) 
 
     # 2nd run arguments 
@@ -21,14 +23,16 @@ def main_multi(args_multi):
         args2.gpu_id = '2'
         args2.img_size = 1024
         args2.restore_from_color_mapping = 'None'
-        args2.save_writer_name = 'colored_deeplabv3+_1024' 
+        args2.ignore_classes = [6,7,11,12,17,18]
+        args2.weighted_ce = True 
+        args2.save_writer_name = 'colored_deeplabv3+_1024_masking_weighted_ce' 
         main(args= args2)
         
     # 3rd run arguments  
     if args_multi.exp == 3: 
         args3 = deepcopy(args)
-        args3.weighted_ce = True 
-        args3.naive_weighting = True
+        args3.synthetic_perturb = 'synthetic_manual_dannet_20n_100p_1024im'  
+        args3.batch_size = 16
         args3.gpu_id = '3'
         args3.save_writer_name = 'colored_deeplabv3+_weighted_naively'
         main(args= args3)

@@ -456,13 +456,14 @@ class BaseTrainer(object):
 
 class CrossEntropy2d(nn.Module):
 
-    def __init__(self, size_average=True, ignore_label=255, ignore_classes = []):
+    def __init__(self, size_average=True, ignore_label=255, ignore_classes = [], weights = None):
         super(CrossEntropy2d, self).__init__()
         self.size_average = size_average
         self.ignore_label = ignore_label
         self.ignore_classes = ignore_classes
+        self.weights = weights
 
-    def forward(self, predict, target, weight=None):
+    def forward(self, predict, target):
         """
             Args:
                 predict:(n, c, h, w)
@@ -489,7 +490,7 @@ class CrossEntropy2d(nn.Module):
         target = target[target_mask]
         predict = predict.transpose(1, 2).transpose(2, 3).contiguous()
         predict = predict[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
-        loss = F.cross_entropy(predict, target, weight=weight, size_average=self.size_average)
+        loss = F.cross_entropy(predict, target, weight=self.weights, size_average=self.size_average)
         # loss = F.nll_loss(torch.log(predict), target, weight=weight, size_average=self.size_average) ## NLL loss cause the pred is now in softmax form.. 
         return loss
 
@@ -559,7 +560,18 @@ class Trainer(BaseTrainer):
         seg_pred = self.model(label_perturb_tensor.float().cuda()) 
         seg_label = seg_label.long().cuda() # cross entropy  
         
-        if self.args.weighted_ce: 
+        if self.args.weighted_ce and self.args.ignore_classes: 
+            # cityscapes weight propotion 
+            weights = torch.log(torch.FloatTensor([0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341,
+                                            0.00207795, 0.0055127, 0.15928651, 0.01157818, 0.04018982, 0.01218957,
+                                            0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,
+                                                0.00413907])).cuda() 
+            # 
+            weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.05 + 1.0
+            loss = CrossEntropy2d(ignore_classes=args.ignore_classes, weights=weights) 
+            
+        
+        elif self.args.weighted_ce: 
             ## weighted cross entropy loss         
             if self.args.naive_weighting:   
                 weights = {0: 0.30354092597961424, 1: 0.0736604881286621, 2: 0.17741899490356444, 3: 0.01694552421569824, 4: 0.012325115203857422, 5: 0.00943770408630371, 6: 0.0021120643615722655, 7: 0.003739910125732422, 8: 0.11350025177001953, 9: 0.006554098129272461, 10: 0.14367461204528809, 11: 0.0014812946319580078, 12: 0.0003917694091796875, 13: 0.021362504959106444, 14: 0.00021363258361816405, 15: 0.0021049118041992186, 16: 0.0072266006469726566, 17: 0.00041659355163574217, 18: 0.0007854843139648437} 
@@ -580,7 +592,7 @@ class Trainer(BaseTrainer):
             
             loss = nn.CrossEntropyLoss(ignore_index=255, weight=weights) 
         elif self.args.ignore_classes:
-            loss = CrossEntropy2d(ignore_classes=args.ignore_classes) 
+            loss = CrossEntropy2d(ignore_classes=args.ignore_classes)  
         else: 
             loss = nn.CrossEntropyLoss(ignore_index=255)
         

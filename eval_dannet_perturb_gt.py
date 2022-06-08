@@ -79,6 +79,8 @@ parser.add_argument("--norm",action='store_true', default=False,
                         help="normalisation of the image")
 parser.add_argument("--ignore_classes", nargs="+", default=[],  
                         help="ignoring classes...blacking out those classes, generally [5,7,11,12,17]")
+parser.add_argument("--posterior",action='store_true', default=False,
+                        help="if posterior calculation required or not")  
 
 args = parser.parse_args()
 
@@ -137,7 +139,7 @@ class BaseDataSet(data.Dataset):
                         "img": img_file,
                         "label":label_file,
                         "name": name
-                    }) 
+                    })  
                 
         elif 'dannet' in self.dataset: 
             for name in self.img_ids: 
@@ -182,10 +184,8 @@ class BaseDataSet(data.Dataset):
                 label = transforms_compose_label(label)   
                 label = torch.tensor(np.array(label))  
             elif 'synthetic' or 'dannet' in self.dataset:
-                image = Image.open(datafiles["img"]).convert('RGB')  
-                
+                image = Image.open(datafiles["img"]).convert('RGB') 
                 if self.args.norm: 
-                    
                     transforms_compose_img = transforms.Compose([ 
                                 transforms.ToTensor(),
                                 transforms.Normalize(*mean_std) ## use only in training 
@@ -196,7 +196,6 @@ class BaseDataSet(data.Dataset):
                     
                 else: 
                     image = torch.tensor(np.array(image)).float()
-                
                 
                 label = Image.open(datafiles["label"]) 
                 label = torch.tensor(np.array(label))
@@ -456,10 +455,16 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights):
                     else: 
                         gt_3ch = [torch.tensor(label_img_to_color(seg_label[bt])) for bt in range(seg_label.shape[0])]   
                         gt_3ch = torch.stack(gt_3ch, dim=0)
-                        label_perturb_tensor = gt_3ch.permute(0, 3, 1, 2).detach().clone()  
+                        label_perturb_tensor = gt_3ch.permute(0, 3, 1, 2).detach().clone() 
+                
+                output =  model(label_perturb_tensor.float().cuda())       
+                perturb = label_perturb_tensor.cuda() 
+                seg_label = seg_label.cuda()
+                output = output.squeeze()  
+                perturb = perturb.squeeze()
+                C,H,W = output.shape    
                 
             elif 'synthetic' or 'dannet' in args.val_dataset: 
-    
                 if args.norm:  
                     image_t, image, seg_label, _ = batch  ## chg 
                     image = image.permute(0, 3, 1, 2) 
@@ -468,36 +473,55 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights):
                     image , seg_label, _ = batch  ## chg 
                     synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()     
                 
-            if 'synthetic' or 'dannet' in args.val_dataset: 
-                output =  model(synthetic_input_perturb.float().cuda()) 
+                if args.ignore_classes: 
+                    # masking  
+                    ignore_classes = json.loads(args.ignore_classes[0])  
+                    ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args)) 
+                    ip_label_clone = ip_label.detach().clone() 
+                    for ig_cl in ignore_classes:
+                        ip_label[ip_label==ig_cl] = 255 
+                    synthetic_input_perturb = label_img_to_color(ip_label)  
+                    synthetic_input_perturb = torch.tensor(synthetic_input_perturb).unsqueeze(dim=0).permute(0,3,1,2)
+                
+                ## output from priornet 
+                output =  model(synthetic_input_perturb.float().cuda())  
                 if args.norm: 
                     perturb = image.detach().clone().cuda()
-                else:       
+                else:     
+                    if args.ignore_classes:
+                    ## unmasking for reverting input
+                        ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args)) 
+                        for ig_cl in ignore_classes: 
+                            ip_label[ip_label_clone==ig_cl] = ig_cl 
+                        synthetic_input_perturb = label_img_to_color(ip_label)   
+                        synthetic_input_perturb = torch.tensor(synthetic_input_perturb).unsqueeze(dim=0).permute(0,3,1,2)     
+                        
                     perturb = synthetic_input_perturb.cuda() 
                 seg_label = seg_label.cuda()
                 output = output.squeeze()  
                 perturb = perturb.squeeze()
                 C,H,W = output.shape 
-            else: 
-                output =  model(label_perturb_tensor.float().cuda())       
-                perturb = label_perturb_tensor.cuda() 
-                seg_label = seg_label.cuda()
-                output = output.squeeze()  
-                perturb = perturb.squeeze()
-                C,H,W = output.shape   
-            
+           
             #########################################################################corrected one 
-            if args.ignore_classes: 
-                Mask = (seg_label.squeeze())<C  
-                ignore_classes = json.loads(args.ignore_classes[0]) 
-                for ig_cl in ignore_classes: 
-                    Mask = Mask * ((seg_label.squeeze())!= ig_cl) 
-            else: 
-                Mask = (seg_label.squeeze())<C  # it is ignoring all the labels values equal or greater than 19 #(1080, 1920)  
+            # if args.ignore_classes: 
+            #     Mask = (seg_label.squeeze())<C  
+            #     ignore_classes = json.loads(args.ignore_classes[0]) 
+            #     for ig_cl in ignore_classes: 
+            #         Mask = Mask * ((seg_label.squeeze())!= ig_cl) 
+            # else:
+            #     pass  
+            
+            Mask = (seg_label.squeeze())<C  # it is ignoring all the labels values equal or greater than 19 #(1080, 1920)  
                 
             pred_e = torch.linspace(0,C-1, steps=C).view(C, 1, 1)  
             pred_e = pred_e.repeat(1, H, W).cuda()  
-            pred = output.argmax(dim=0).float() ## prior  
+            pred = output.argmax(dim=0).float() ## prior   
+            
+            if args.ignore_classes:
+            ## unmasking 
+                for ig_cl in ignore_classes:
+                    pred[ip_label_clone==ig_cl] = ig_cl 
+            
             pred_mask = torch.eq(pred_e, pred).byte()    
             pred_mask = pred_mask*Mask 
         
@@ -596,7 +620,7 @@ class BaseTrainer(object):
         print("MIou calculation: ")    
         iou, mIoU, acc, mAcc = compute_iou(self.model, testloader, self.args, self.da_model, self.lightnet, self.weights)
         
-        breakpoint()
+        # breakpoint()
         print('loss calc and saving images')        
         ## not calculating loss for now  
         for i_iter, batch in tqdm(enumerate(testloader)): 
@@ -620,7 +644,6 @@ class BaseTrainer(object):
 
                 output2 = self.interp(output2).cpu().numpy() 
                 seg_pred = torch.tensor(output2) 
-                # print(pred.shape)  
                 seg_pred = F.softmax(seg_pred, dim=1) 
                 
                 ## converting the gt seglabel with train ids into onehot matrix 
@@ -648,38 +671,55 @@ class BaseTrainer(object):
                     seg_pred_tensor = gt_3ch.permute(0, 3, 1, 2).detach().clone()  
             
             elif 'synthetic' or 'dannet' in self.args.val_dataset:     
-                if args.norm:  
+                if self.args.norm:  
                     image_t, image, seg_label, name = batch  ## chg 
                     image = image.permute(0, 3, 1, 2) 
                     synthetic_input_perturb = image_t.detach().clone() 
                 else: 
                     image , seg_label, name = batch  ## chg 
-                    synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()
-                    image = image.permute(0, 3, 1, 2).detach().clone()
-                
+                    synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()                         
+                    # image = image.permute(0, 3, 1, 2).detach().clone() 
                 nm = name[0].split('/')[-1]  
+                
+                if args.ignore_classes:
+                    # masking 
+                    ignore_classes = json.loads(args.ignore_classes[0])  
+                    ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args))   
+                    ip_label_clone = ip_label.detach().clone()
+                    for ig_cl in ignore_classes:
+                        ip_label[ip_label==ig_cl] = 255 
+                    synthetic_input_perturb = label_img_to_color(ip_label)  
+                    synthetic_input_perturb = torch.tensor(synthetic_input_perturb).unsqueeze(dim=0).permute(0,3,1,2)     
+            
             ## changing name    
             seg_correct = self.model(synthetic_input_perturb.float().cuda())    
             
             # seg_preds = torch.argmax(label_perturb_tensor, dim=1) 
             # pertub dannet gt
-            seg_preds = torch.tensor(color_to_label(image[0], self.args))
+            # seg_preds = torch.tensor(color_to_label(image[0], self.args))  
             ## ignore classes blacking out  
-            if self.args.ignore_classes:   
-                ignore_classes = json.loads(args.ignore_classes[0]) 
-                ip_imglb = color_to_label(image[0], self.args)
+            # if self.args.ignore_classes:   
+            #     ignore_classes = json.loads(args.ignore_classes[0]) 
+            #     ip_imglb = color_to_label(image[0], self.args)
+            #     for ig_cl in ignore_classes: 
+            #         seg_preds[ip_imglb==ig_cl] = 19 # black region  
+            
+            seg_preds = torch.tensor(color_to_label(synthetic_input_perturb[0], self.args))   
+            if args.ignore_classes:
+                ## unmasking for reverting input
                 for ig_cl in ignore_classes: 
-                    seg_preds[ip_imglb==ig_cl] = 19 # black region 
+                    seg_preds[ip_label_clone==ig_cl] = ig_cl
             
             seg_preds[seg_label[0]==255] = 19 # ignore black region             
             seg_preds =  label_img_to_color(seg_preds)  
 
             ## correction output              
             seg_corrects = torch.argmax(seg_correct, dim=1)[0] 
-            ## paste it back the ignore regions 
+            
             if self.args.ignore_classes:   
-                for ig_cl in ignore_classes: 
-                    seg_corrects[ip_imglb==ig_cl] = seg_label[0][ip_imglb==ig_cl].to(torch.long).cuda() # black region   
+                ## unmasking 
+                for ig_cl in ignore_classes:  
+                    seg_corrects[ip_label_clone==ig_cl] = ig_cl   
             
             seg_corrects[seg_label[0]==255] = 19 # ignore black region
             seg_corrects = label_img_to_color(seg_corrects) 
