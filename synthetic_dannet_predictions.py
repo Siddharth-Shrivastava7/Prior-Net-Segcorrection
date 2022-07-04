@@ -50,13 +50,12 @@ parser.add_argument("--worker", type=int, default=4)
 parser.add_argument("--set", type=str, default='val')       
 parser.add_argument("--synthetic_perturb", type=str, default='synthetic_manual_dannet_20n_100p_1024im',
                         help='evalutating technique')
-parser.add_argument("--img_size", type=int, default=512,  # may be req 
+parser.add_argument("--img_size", type=int, default=1024,  # may be req 
                         help="size of image or label, which is to be trained") 
 parser.add_argument("--collague", action='store_true', default=False,
                         help="forming collague")
 parser.add_argument("--is_synthetic", action='store_true', default=False,
-                        help="which color to use for synthetic maps")
-
+                        help="which color to use for synthetic maps") 
 args = parser.parse_args()
 
 def init_data(args): 
@@ -131,7 +130,7 @@ class BaseDataSet(data.Dataset):
                 img_trans = transforms_compose_img(image) 
                 image = torch.tensor(np.array(img_trans)).float() 
                 
-                transforms_compose_label = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size),interpolation=Image.NEAREST)]) 
+                transforms_compose_label = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size), interpolation=Image.NEAREST)]) 
                 label = Image.open(datafiles["label"]) 
                 label = transforms_compose_label(label)   
                 label = torch.tensor(np.array(label))    
@@ -222,9 +221,10 @@ class BaseTrainer(object):
                 if self.args.model_dannet == 'RefineNet':
                     output2 = self.da_model(enhancement)
                 else:
-                    _, output2 = self.da_model(enhancement)
+                    _, output2 = self.da_model(enhancement) 
 
-            if self.args.set == 'val':
+            if self.args.set == 'val': 
+                ## TODO this after loading  ## have to work on this since it requires 19 channels thus, 19 channel output should also have to be there if we want to put this on the eval script directly!
                 weights = torch.log(torch.FloatTensor(
                     [0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341, 0.00207795, 0.0055127, 0.15928651,
                     0.01157818, 0.04018982, 0.01218957, 0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,
@@ -232,12 +232,11 @@ class BaseTrainer(object):
                 weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.16 + 1.0
                 weights_prob = weights.expand(output2.size()[0], output2.size()[3], output2.size()[2], 19)
                 weights_prob = weights_prob.transpose(1, 3)
-                output2 = output2 * weights_prob
-                output2 = self.interp_whole(output2).cpu().numpy()
-
+                output2 = output2 * weights_prob 
+                output2 = self.interp_whole(output2).cpu().numpy() 
             else:
                 ## in training have to apply weighted cross entropy loss
-                ## so passing the input as it is
+                ## so passing the input as it is 
                 output2 = self.interp(output2).cpu().numpy()
 
             seg_pred = torch.tensor(output2) 
@@ -258,18 +257,17 @@ class BaseTrainer(object):
                 seg_label_perturb[:, randx: randx + self.args.patch_size, randy:randy+self.args.patch_size]  \
                             = seg_pred[:, randx: randx + self.args.patch_size, randy:randy+self.args.patch_size]
             
-            ## perturbed seg label
-            gt_3ch_perturb = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=args.is_synthetic))  
-            gt_3ch_perturb = np.array(gt_3ch_perturb) 
-            # path = os.path.join(self.args.data_dir, 'acdc_trainval/rgb_anon/night','synthetic', self.args.set, 'synthetic_manual_dannet_collague', name)
-            # gt_3ch.save(path)
-                
+            ## perturbed seg label synthetic
+            gt_3ch_perturb_synthetic = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=args.is_synthetic))  
+            gt_3ch_perturb_synthetic = np.array(gt_3ch_perturb_synthetic) 
+            
             ## saving collague and perturbed seg pred which is to be used  
             if args.collague:
-                ## perturbed seg label synthetic
-                gt_3ch_perturb_synthetic = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=args.is_synthetic))  
-                gt_3ch_perturb_synthetic = np.array(gt_3ch_perturb_synthetic) 
-                
+                ## perturbed seg label
+                gt_3ch_perturb = torch.tensor(label_img_to_color(seg_label_perturb[0],synthetic=args.is_synthetic))  
+                gt_3ch_perturb = np.array(gt_3ch_perturb) 
+                # path = os.path.join(self.args.data_dir, 'acdc_trainval/rgb_anon/night','synthetic', self.args.set, 'synthetic_manual_dannet_collague', name)
+                # gt_3ch.save(path)
                 ## original seg label
                 gt_3ch = torch.tensor(label_img_to_color(seg_label[0], synthetic=args.is_synthetic))  
                 gt_3ch = np.array(gt_3ch) 
@@ -288,8 +286,6 @@ class BaseTrainer(object):
             gt_3ch_perturb_synthetic_img = Image.fromarray(gt_3ch_perturb_synthetic) 
             path_img = os.path.join(self.args.data_dir, 'acdc_trainval/rgb_anon/night', 'synthetic', self.args.set, args.synthetic_perturb, name)
             gt_3ch_perturb_synthetic_img.save(path_img)
-                         
-        
 
 class predictor(BaseTrainer):
     def __init__(self, args):

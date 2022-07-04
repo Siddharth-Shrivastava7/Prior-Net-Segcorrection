@@ -1,6 +1,5 @@
 import torch  
 import torch.multiprocessing as mp
-
 from torch.utils import data 
 import torchvision.transforms as transforms  
 import os, sys 
@@ -22,7 +21,8 @@ import network
 import argparse 
 from torchsummary import summary 
 import json  
-import dataset.joint_transforms as joint_transforms
+import dataset.joint_transforms as joint_transforms 
+
 
 parser = argparse.ArgumentParser() 
 
@@ -33,8 +33,10 @@ available_models = sorted(name for name in network.modeling.__dict__ if name.isl
                               network.modeling.__dict__[name])
                               )
 parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16]) 
-parser.add_argument("--model", type=str, default='deeplabv3plus_mobilenet',
-                        choices=available_models, help='model name') 
+# parser.add_argument("--model", type=str, default='deeplabv3plus_mobilenet',
+#                         choices=available_models, help='model name') 
+parser.add_argument("--model", type=str, default='unet',
+                    help='model name') 
 parser.add_argument("--num_classes", type=int, default=19,
                         help="num classes (default: 19)")  
 parser.add_argument("--num_ip_channels", '-ip_chs',type=int, default=3,
@@ -108,7 +110,7 @@ parser.add_argument("--scheduler",action='store_true', default=False,
 parser.add_argument("--augment",action='store_true', default=False,
                         help="using augmentation during training") 
 parser.add_argument("--small_model",action='store_true', default=False,
-                        help="using augmentation during training") 
+                        help="using augmentation during training")  ## denoising auto encoder (thinking of...let's seeee)
 
 
 args = parser.parse_args()
@@ -343,11 +345,12 @@ class BaseDataSet(data.Dataset):
 
 # breakpoint()
 
-#############mean and std of the dataset######################
+##############mean and std of the dataset######################
 
        
 def init_model(args): 
     if args.small_model: 
+        
         pass 
     else: 
     
@@ -666,8 +669,9 @@ class Trainer(BaseTrainer):
 
         for epoch in tqdm(range(self.args.epochs)):
             epoch_infor = ('epoch = {:6d}/{:6d}, exp = {}'.format(epoch, int(self.args.epochs), self.args.save_writer_name))
-            
             print(epoch_infor) 
+            self.model = self.model.train()  
+            
             if args.scheduler: 
                 scheduler = PolynomialLRDecay(self.optim, max_decay_steps=max_decay_steps, args=self.args) 
                 scheduler.step(epoch) 
@@ -699,8 +703,7 @@ class Trainer(BaseTrainer):
                 name = self.args.save_writer_name + '.pth' # for the ce loss  
                 torch.save(self.model.state_dict(), os.path.join(self.args.snapshot, name))
                 print(os.path.join(self.args.snapshot, name))
-                            
-            self.model = self.model.train()
+                        
         
         print('best_val_epoch_loss: ', best_val_epoch_loss, 'best_epoch:', best_epoch)
         writer.export_scalars_to_json("./all_scalars.json")
@@ -709,7 +712,7 @@ class Trainer(BaseTrainer):
 
 def main(args): 
     if args.multigpu:
-        os.environ['CUDA_VISIBLE_DEVICES'] = "2,3,4" 
+        os.environ['CUDA_VISIBLE_DEVICES'] = "1,2,3,7,0" 
     else:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id 
     torch.manual_seed(1234)
@@ -726,16 +729,6 @@ def main(args):
 if __name__ == "__main__":  
     mp.set_start_method('spawn')   ## for different random value using np.random  
     main(args)
- 
-         
-
-        
-        
-        
-        
-
-        
-        
         
             
             

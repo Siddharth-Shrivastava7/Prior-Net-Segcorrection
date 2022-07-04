@@ -116,14 +116,14 @@ class UNet_mod_31m(nn.Module):
 
 
 
-# if __name__ == '__main__': 
-#   os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+if __name__ == '__main__': 
+  os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
-#   print('*********************Model Summary***********************')
-#   # model = UNet_mod_1m(n_channels=19, n_class = 19) 
-#   model=  UNet_mod_31m(n_channels=3, n_class = 3)
-#   if torch.cuda.is_available(): 
-#     model = model.cuda()
+  print('*********************Model Summary***********************')
+  model = UNet_mod_1m(n_channels=3, n_class = 19) 
+  # model=  UNet_mod_31m(n_channels=3, n_class = 3)
+  if torch.cuda.is_available(): 
+    model = model.cuda()
 
-#   print(summary(model, (3, 1080, 1920))) 
-# # original 
+  print(summary(model, (3, 1080, 1920))) 
+# original 

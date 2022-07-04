@@ -70,7 +70,6 @@ class Postdae(nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
         x = self.layer5(x) 
-        breakpoint()
         x = self.layer6(x)
         x = self.layer7(x)
         x = self.layer8(x)

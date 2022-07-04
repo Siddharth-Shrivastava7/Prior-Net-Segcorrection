@@ -105,12 +105,12 @@ class ResNet18UNet(nn.Module):
     out = self.conv_last(x)
     return out
 
-# if __name__ == '__main__': 
-#   os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+if __name__ == '__main__': 
+  os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
-#   print('*********************Model Summary***********************')
-#   model = ResNet18UNet(3, 3)
-#   if torch.cuda.is_available(): 
-#     model = model.cuda() 
+  print('*********************Model Summary***********************')
+  model = ResNet18UNet(3, 3)
+  if torch.cuda.is_available(): 
+    model = model.cuda() 
 
-# print(summary(model, (3, 512, 512)))   
+print(summary(model, (3, 512, 512)))   

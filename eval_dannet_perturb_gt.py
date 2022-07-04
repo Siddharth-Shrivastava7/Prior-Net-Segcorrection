@@ -78,13 +78,18 @@ parser.add_argument("--save_path", type=str, default='synthetic_new_manual_danne
 parser.add_argument("--norm",action='store_true', default=False,
                         help="normalisation of the image")
 parser.add_argument("--ignore_classes", nargs="+", default=[],  
-                        help="ignoring classes...blacking out those classes, generally [5,7,11,12,17]")
+                        help="ignoring classes...blacking out those classes, generally [6,7,11,12,17,18]")
 parser.add_argument("--posterior",action='store_true', default=False,
                         help="if posterior calculation required or not")  
 
 args = parser.parse_args()
 
 ## dataset init 
+
+weights = torch.log(torch.FloatTensor(
+                    [0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341, 0.00207795, 0.0055127, 0.15928651, 0.01157818, 0.04018982, 0.01218957, 0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658, 0.00413907])).cuda()
+weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.16 + 1.0   ## std 0.16 for validation
+
 
 def init_val_data(args): 
     valloader = data.DataLoader(
@@ -272,7 +277,7 @@ def label_img_to_color(img):
 def label_img_to_manual_color(img): 
     manual_dd = {
     0: [77, 77, 77], 1: [100, 110, 120], 2: [150,100,175], 3: [102, 102, 156], 
-    4: [100, 51, 43], 5: [125, 175, 175], 6: [250, 170, 30], 7: [220, 220,   0], 
+    4: [100, 51, 43], 5: [125, 175, 175], 6: [250, 170, 30], 7: [220, 220,  0], 
     8: [107, 142,  35], 9: [70, 74,  20], 10: [50, 100, 200], 11: [190, 153, 153], 12: [140,100,100], 13: [255,255,255], 14: [15, 25,  80], 15: [50, 50,  190], 16: [10, 80, 90], 17: [180, 60,  50], 18: [120, 50,  60], 19: [0,0,0]
     } # manual 
     img = np.array(img.cpu())
@@ -455,7 +460,7 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights):
                     else: 
                         gt_3ch = [torch.tensor(label_img_to_color(seg_label[bt])) for bt in range(seg_label.shape[0])]   
                         gt_3ch = torch.stack(gt_3ch, dim=0)
-                        label_perturb_tensor = gt_3ch.permute(0, 3, 1, 2).detach().clone() 
+                        label_perturb_tensor = gt_3ch.permute(0, 3, 1, 2).detach().clone()  
                 
                 output =  model(label_perturb_tensor.float().cuda())       
                 perturb = label_perturb_tensor.cuda() 
@@ -470,13 +475,17 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights):
                     image = image.permute(0, 3, 1, 2) 
                     synthetic_input_perturb = image_t.detach().clone() 
                 else: 
-                    image , seg_label, _ = batch  ## chg 
-                    synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()     
+                    image , seg_label, _ = batch   
+                    synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()                         
+                       
                 
                 if args.ignore_classes: 
                     # masking  
                     ignore_classes = json.loads(args.ignore_classes[0])  
-                    ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args)) 
+                    if args.norm: 
+                        ip_label = torch.tensor(color_to_label(image[0], args))   
+                    else: 
+                        ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args)) 
                     ip_label_clone = ip_label.detach().clone() 
                     for ig_cl in ignore_classes:
                         ip_label[ip_label==ig_cl] = 255 
@@ -490,7 +499,10 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights):
                 else:     
                     if args.ignore_classes:
                     ## unmasking for reverting input
-                        ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args)) 
+                        if args.norm: 
+                            ip_label = torch.tensor(color_to_label(image[0], args))   
+                        else: 
+                            ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args)) 
                         for ig_cl in ignore_classes: 
                             ip_label[ip_label_clone==ig_cl] = ig_cl 
                         synthetic_input_perturb = label_img_to_color(ip_label)   
@@ -676,15 +688,18 @@ class BaseTrainer(object):
                     image = image.permute(0, 3, 1, 2) 
                     synthetic_input_perturb = image_t.detach().clone() 
                 else: 
-                    image , seg_label, name = batch  ## chg 
+                    image , seg_label, name = batch  ## chg   
                     synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()                         
-                    # image = image.permute(0, 3, 1, 2).detach().clone() 
+                    
                 nm = name[0].split('/')[-1]  
                 
                 if args.ignore_classes:
                     # masking 
                     ignore_classes = json.loads(args.ignore_classes[0])  
-                    ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args))   
+                    if args.norm: 
+                        ip_label = torch.tensor(color_to_label(image[0], args))   
+                    else: 
+                        ip_label = torch.tensor(color_to_label(synthetic_input_perturb[0], args))  
                     ip_label_clone = ip_label.detach().clone()
                     for ig_cl in ignore_classes:
                         ip_label[ip_label==ig_cl] = 255 
@@ -704,7 +719,10 @@ class BaseTrainer(object):
             #     for ig_cl in ignore_classes: 
             #         seg_preds[ip_imglb==ig_cl] = 19 # black region  
             
-            seg_preds = torch.tensor(color_to_label(synthetic_input_perturb[0], self.args))   
+            if args.norm: 
+                seg_preds = torch.tensor(color_to_label(image[0], args))   
+            else: 
+                seg_preds = torch.tensor(color_to_label(synthetic_input_perturb[0], args))  
             if args.ignore_classes:
                 ## unmasking for reverting input
                 for ig_cl in ignore_classes: 
@@ -776,7 +794,7 @@ class Trainer(BaseTrainer):
  
 def main(args): 
     if args.multigpu:
-        os.environ['CUDA_VISIBLE_DEVICES'] = "2,3,4" 
+        os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2" 
     else:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id 
     torch.manual_seed(1234)

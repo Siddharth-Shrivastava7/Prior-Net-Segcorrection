@@ -116,14 +116,13 @@ class denoise_auto_encoder(nn.Module):
 
 
 
-# if __name__ == '__main__': 
-#   os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+if __name__ == '__main__': 
+  os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
-#   print('*********************Model Summary***********************')
-#   # model=  reconst_auto_encoder()
-#   model=  denoise_auto_encoder()
-#   if torch.cuda.is_available(): 
-#     model = model.cuda()
+  print('*********************Model Summary***********************')
+  # model=  reconst_auto_encoder()
+  model=  denoise_auto_encoder()
+  if torch.cuda.is_available(): 
+    model = model.cuda()
 
-#   print(summary(model, (128, 64, 64))) 
-  # print(summary(model, (19, 512, 512))) 
+  print(summary(model, (3, 64, 64))) 

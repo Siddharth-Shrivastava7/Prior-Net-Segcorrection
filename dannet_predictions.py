@@ -24,7 +24,7 @@ from torchsummary import summary
 
 parser = argparse.ArgumentParser() 
 
-parser.add_argument("--gpu_id", type=str, default='0',
+parser.add_argument("--gpu_id", type=str, default='1',
                         help="GPU ID") 
 parser.add_argument("--num_classes", type=int, default=19,
                         help="num classes (default: 19)")  
@@ -39,7 +39,9 @@ parser.add_argument("--data_dir", type=str, default='/home/sidd_s/scratch/datase
 parser.add_argument("--data_list", type=str, default='./dataset/list/acdc/acdc_valrgb.txt',
                         choices = ['./dataset/list/acdc/acdc_valrgb.txt', './dataset/list/acdc/acdc_trainrgb.txt'],help='list of names of validation files')  
 parser.add_argument("--worker", type=int, default=4)   
-parser.add_argument("--set", type=str, default='val')       
+parser.add_argument("--set", type=str, default='val')    
+parser.add_argument("--img_size", type=int, default=1024,  # may be req 
+                        help="size of image or label, which is to be trained")    
 
 args = parser.parse_args()
 
@@ -111,11 +113,11 @@ class BaseDataSet(data.Dataset):
             else: 
                 image = Image.open(datafiles["img"]).convert('RGB') 
                 
-                transforms_compose_img = transforms.Compose([transforms.Resize((512,512)), transforms.ToTensor(), transforms.Normalize(*mean_std)]) 
+                transforms_compose_img = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size)), transforms.ToTensor(), transforms.Normalize(*mean_std)]) 
                 img_trans = transforms_compose_img(image) 
                 image = torch.tensor(np.array(img_trans)).float() 
                 
-                transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)]) 
+                transforms_compose_label = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size),interpolation=Image.NEAREST)]) 
                 label = Image.open(datafiles["label"]) 
                 label = transforms_compose_label(label)   
                 label = torch.tensor(np.array(label))    
@@ -250,9 +252,8 @@ class predictor(BaseTrainer):
         self.da_model, self.lightnet, self.weights = pred(self.args.num_classes, self.args.model_dannet, self.args.restore_from_da, self.args.restore_light_path)  
         self.da_model = self.da_model.eval() 
         self.lightnet = self.lightnet.eval() 
-        self.interp = nn.Upsample(size=(512, 512), mode='bilinear', align_corners=True)
         self.interp_whole = nn.Upsample(size=(1080, 1920), mode='bilinear', align_corners=True)
-        self.interp = nn.Upsample(size=(512, 512), mode='bilinear', align_corners=True)
+        self.interp = nn.Upsample(size=(self.args.img_size, self.args.img_size), mode='bilinear', align_corners=True)
 
     def predict(self):        
         self.validate() 
