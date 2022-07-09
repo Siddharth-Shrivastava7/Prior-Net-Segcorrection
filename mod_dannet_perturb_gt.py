@@ -32,11 +32,10 @@ available_models = sorted(name for name in network.modeling.__dict__ if name.isl
                               not (name.startswith("__") or name.startswith('_')) and callable(
                               network.modeling.__dict__[name])
                               )
+available_models.append('unet')
 parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16]) 
-# parser.add_argument("--model", type=str, default='deeplabv3plus_mobilenet',
-#                         choices=available_models, help='model name') 
-parser.add_argument("--model", type=str, default='unet',
-                    help='model name') 
+parser.add_argument("--model", type=str, default='deeplabv3plus_mobilenet',
+                        choices=available_models, help='model name') 
 parser.add_argument("--num_classes", type=int, default=19,
                         help="num classes (default: 19)")  
 parser.add_argument("--num_ip_channels", '-ip_chs',type=int, default=3,
@@ -55,11 +54,12 @@ parser.add_argument("--restore_from_da", type=str, default='/home/sidd_s/scratch
                         help='Dannet pre-trained model path') 
 parser.add_argument("--restore_light_path", type=str, default='/home/sidd_s/scratch/saved_models/DANNet/dannet_psp_light.pth',
                         help='Dannet pre-trained light net model path') 
-parser.add_argument("--num_patch_perturb", type=int, default=100,  # may be req 
-                        help="num of patches to be perturbed") 
-parser.add_argument("--patch_size", type=int, default=10, # may be req 
-                        help="size of square patch to be perturbed")
-parser.add_argument("--save_writer_name", '-svnm', type=str, default='1024_augment_bt16',
+## commenting the below code, since no on the fly perturbation is required; the perturbation is done via loading from the saved images
+# parser.add_argument("--num_patch_perturb", type=int, default=100,  # may be req 
+#                         help="num of patches to be perturbed") 
+# parser.add_argument("--patch_size", type=int, default=10, # may be req 
+#                         help="size of square patch to be perturbed")
+parser.add_argument("--save_writer_name", '-svnm', type=str, default='1024_50n_100p_bt4', 
                         help='saving tensorboard file name')  # may be req  
 parser.add_argument("--learning_rate", '-lr', type=float, default=3e-4, # may be req  
                         help="learning rate for trainig prior net") 
@@ -75,18 +75,18 @@ parser.add_argument("--val_data_dir", '-val_dr', type=str, default='/home/sidd_s
                         help='train data directory') 
 parser.add_argument("--val_data_list", '-val_dr_lst', type=str, default='./dataset/list/acdc/acdc_valrgb.txt',
                         choices = ['./dataset/list/acdc/acdc_valrgb.txt'],help='list of names of validation files')   
-parser.add_argument("--batch_size", type=int, default=16)  # may be req 
+parser.add_argument("--batch_size", type=int, default=4)  # may be req 
 parser.add_argument("--worker", type=int, default=4)   
 parser.add_argument("--train_dataset", '-tr_nm', type=str, default='synthetic_manual_train_label',
                         choices = ['acdc_train_label','synthetic_manual_train_label', 'synthetic_acdc_train_label', 'dannet_pred_train'], help='train datset name') 
 parser.add_argument("--val_dataset", '-val_nm', type=str, default='synthetic_manual_val_label',
                         choices = ['acdc_val_label', 'synthetic_manual_val_label', 'synthetic_acdc_val_label', 'dannet_pred_val'], help='valditation datset name') 
 parser.add_argument("--print_freq", type=int, default=1)  
-parser.add_argument("--epochs", type=int, default=1500)   # may be req 
+parser.add_argument("--epochs", type=int, default=700)   # may be req 
 parser.add_argument("--snapshot", type=str, default='../scratch/saved_models/acdc/dannet',
                         help='model saving directory')   
 parser.add_argument("--exp", '-e', type=int, default=1, help='which exp to run')                     
-parser.add_argument("--synthetic_perturb", type=str, default='synthetic_manual_dannet_20n_100p_1024im', # manual color decided acc to seperablity b/w classes
+parser.add_argument("--synthetic_perturb", type=str, default='synthetic_manual_dannet_50n_100p_1024im', # manual color decided acc to seperablity b/w classes
                         help='evalutating technique')
 parser.add_argument("--end_learning_rate", type=float, default=1e-5, # may be req  
                         help="end learning rate required in the lr scheduling") 
@@ -350,10 +350,8 @@ class BaseDataSet(data.Dataset):
        
 def init_model(args): 
     if args.small_model: 
-        
-        pass 
+        model = network.unet.Unet(input_channels=args.num_ip_channels, num_classes=args.num_classes, num_filters=[32,64,128,192], initializers={'w':'he_normal', 'b':'normal'})  
     else: 
-    
         # Deeplabv3+ model for prior net
         model = network.modeling.__dict__[args.model](num_classes=args.num_classes, output_stride=args.output_stride, num_ip_channels = args.num_ip_channels)   
         network.utils.set_bn_momentum(model.backbone, momentum=0.01)  
@@ -626,7 +624,7 @@ class Trainer(BaseTrainer):
                 weights = torch.log(torch.FloatTensor([weights[key] for key in weights])).cuda() 
                 weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.05 + 1.0 
             else: 
-                # cityscapes weight propotion 
+                # cityscapes weight propotion {similar to the one used by DaNNet}
                 weights = torch.log(torch.FloatTensor([0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341,
                                                 0.00207795, 0.0055127, 0.15928651, 0.01157818, 0.04018982, 0.01218957,
                                                 0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,

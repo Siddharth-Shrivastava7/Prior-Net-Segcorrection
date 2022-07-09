@@ -71,7 +71,8 @@ def _segm_mobilenet(name, backbone_name, num_classes, output_stride, pretrained_
     backbone.high_level_features = backbone.features[4:-1]
     backbone.features = None
     backbone.classifier = None
-
+    
+    # specific to mobilenet architecture
     inplanes = 320
     low_level_planes = 24
     

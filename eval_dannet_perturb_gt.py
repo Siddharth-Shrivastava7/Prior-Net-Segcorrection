@@ -18,19 +18,27 @@ from PIL import Image
 from torch.utils import data
 from tqdm import tqdm
 import json 
-from dataset.network.dannet_pred import pred
+# from dataset.network.dannet_pred import pred 
 from utils.optimize import *
 import argparse
-import network
+import network 
+from dataset.network.pspnet import PSPNet
+from dataset.network.deeplab import Deeplab
+from dataset.network.refinenet import RefineNet
+from dataset.network.relighting import LightNet, L_TV, L_exp_z, SSIM
+from dataset.network.discriminator import FCDiscriminator
+from dataset.network.loss import StaticLoss
+
 
 parser = argparse.ArgumentParser() 
 
-parser.add_argument("--gpu_id", type=str, default='5',
+parser.add_argument("--gpu_id", type=str, default='7',
                         help="GPU ID") 
 available_models = sorted(name for name in network.modeling.__dict__ if name.islower() and \
                               not (name.startswith("__") or name.startswith('_')) and callable(
                               network.modeling.__dict__[name])
                               )
+available_models.append('unet')
 parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16]) 
 parser.add_argument("--model", type=str, default='deeplabv3plus_mobilenet',
                         choices=available_models, help='model name') 
@@ -67,7 +75,7 @@ parser.add_argument("--snapshot", type=str, default='../scratch/saved_models/acd
 parser.add_argument("--exp", '-e', type=int, default=1, help='which exp to run')                     
 parser.add_argument("--method_eval", type=str, default='dannet_perturb_gt',
                         help='evalutating technique') 
-parser.add_argument("--synthetic_perturb", type=str, default='synthetic_new_manual_dannet_20n_100p',
+parser.add_argument("--synthetic_perturb", type=str, default='synthetic_manual_dannet_50n_100p_1024im',
                         help='evalutating technique')
 parser.add_argument("--color_map", action='store_true', default=False,
                         help="color_mapping project evalutation")
@@ -81,8 +89,15 @@ parser.add_argument("--ignore_classes", nargs="+", default=[],
                         help="ignoring classes...blacking out those classes, generally [6,7,11,12,17,18]")
 parser.add_argument("--posterior",action='store_true', default=False,
                         help="if posterior calculation required or not")  
+parser.add_argument("--small_model",action='store_true', default=False,
+                        help="using augmentation during training")  ## denoising auto encoder (thinking of...let's seeee)
 
 args = parser.parse_args()
+
+if args.multigpu:
+    os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2" 
+else:
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id 
 
 ## dataset init 
 
@@ -96,6 +111,45 @@ def init_val_data(args):
             BaseDataSet(args, args.val_data_dir, args.val_data_list, args.val_dataset, args.num_classes, ignore_label=255, set='val'),
             batch_size=1, shuffle=True, num_workers=args.worker, pin_memory=True)
     return valloader    
+
+def pred(num_classes,  model, restore_from, restore_light_path):
+    
+    if model == 'PSPNet':
+        model = PSPNet(num_classes=num_classes)
+    if model == 'DeepLab':
+        model = Deeplab(num_classes=num_classes)
+    if model == 'RefineNet':
+        model = RefineNet(num_classes=num_classes, imagenet=False)
+
+    # saved_state_dict = torch.load(restore_from, map_location='cuda: 7')
+    saved_state_dict = torch.load(restore_from)
+    
+    # saved_state_dict = torch.load('/home/sidd_s/scratch/saved_models_hpc/saved_models/DANNet/dannet_psp.pth')
+    model_dict = model.state_dict()
+    saved_state_dict = {k: v for k, v in saved_state_dict.items() if k in model_dict}
+    model_dict.update(saved_state_dict)
+    model.load_state_dict(saved_state_dict)
+
+    lightnet = LightNet()
+    saved_state_dict = torch.load(restore_light_path)
+    model_dict = lightnet.state_dict()
+    saved_state_dict = {k: v for k, v in saved_state_dict.items() if k in model_dict}
+    model_dict.update(saved_state_dict)
+    lightnet.load_state_dict(saved_state_dict)
+
+    model = model.cuda()
+    lightnet = lightnet.cuda() 
+    # model = model.to('cuda:7')
+    # lightnet = lightnet.to('cuda:7') 
+    
+    weights = torch.log(torch.FloatTensor(
+        [0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341, 0.00207795, 0.0055127, 0.15928651,
+         0.01157818, 0.04018982, 0.01218957, 0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,
+         0.00413907])).cuda()
+    std = 0.16 ## original
+    weights = (torch.mean(weights) - weights) / torch.std(weights) * std + 1.0
+
+    return model, lightnet, weights
 
 class BaseDataSet(data.Dataset): 
     def __init__(self, args, root, list_path,dataset, num_classes, ignore_label=255, set='val'): 
@@ -221,16 +275,18 @@ class BaseDataSet(data.Dataset):
                 
 
 def init_model(args): 
-    # Deeplabv3+ model for prior net
-    model = network.modeling.__dict__[args.model](num_classes=args.num_classes, output_stride=args.output_stride, num_ip_channels = args.num_ip_channels )   
-    network.utils.set_bn_momentum(model.backbone, momentum=0.01)  
+    if args.small_model: 
+        model = network.unet.Unet(input_channels=args.num_ip_channels, num_classes=args.num_classes, num_filters=[32,64,128,192], initializers={'w':'he_normal', 'b':'normal'})  
+    else:     
+        # Deeplabv3+ model for prior net
+        model = network.modeling.__dict__[args.model](num_classes=args.num_classes, output_stride=args.output_stride, num_ip_channels = args.num_ip_channels )   
+        network.utils.set_bn_momentum(model.backbone, momentum=0.01)  
     if args.multigpu:
         model = nn.DataParallel(model)
     params = torch.load(os.path.join('/home/sidd_s/scratch/saved_models/acdc/dannet/',args.restore_from))
     model.load_state_dict(params)
     print('----------Model initialize with weights from-------------: {}'.format(args.restore_from))
-
-    model.eval().cuda()
+    model.eval().cuda() 
     print('Mode --> Eval') 
     
     return model
@@ -493,6 +549,7 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights):
                     synthetic_input_perturb = torch.tensor(synthetic_input_perturb).unsqueeze(dim=0).permute(0,3,1,2)
                 
                 ## output from priornet 
+                # output =  model(synthetic_input_perturb.float().cuda())  
                 output =  model(synthetic_input_perturb.float().cuda())  
                 if args.norm: 
                     perturb = image.detach().clone().cuda()
@@ -792,11 +849,11 @@ class Trainer(BaseTrainer):
         valid_loss = self.validate()    
         return     
  
-def main(args): 
-    if args.multigpu:
-        os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2" 
-    else:
-        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id 
+def main(args):  
+    # if args.multigpu:
+    #     os.environ['CUDA_VISIBLE_DEVICES'] = "0,1,2" 
+    # else:
+    #     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id 
     torch.manual_seed(1234)
     torch.cuda.manual_seed(1234)
     np.random.seed(1234)
