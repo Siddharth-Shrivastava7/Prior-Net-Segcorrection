@@ -119,8 +119,8 @@ class MobileNetV2(nn.Module):
         # building first layer
         input_channel = _make_divisible(input_channel * width_mult, round_nearest)
         self.last_channel = _make_divisible(last_channel * max(1.0, width_mult), round_nearest)
-        features = [ConvBNReLU(3, input_channel, stride=2)] 
-        # features = [ConvBNReLU(num_ip_channels, input_channel, stride=2)]
+        # features = [ConvBNReLU(3, input_channel, stride=2)] # changing (not using for experiments)
+        features = [ConvBNReLU(num_ip_channels, input_channel, stride=2)]
         current_stride *= 2
         dilation=1
         previous_dilation = 1

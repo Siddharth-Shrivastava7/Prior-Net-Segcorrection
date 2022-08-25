@@ -47,7 +47,7 @@ def outconv(in_channels, out_channels):
   return nn.Conv2d(in_channels, out_channels, kernel_size=1)
  
 class reconst_auto_encoder(nn.Module):
-  def __init__(self, n_ip_chs=19, n_out_chs=19, base_chs=16):
+  def __init__(self, n_ip_chs=3, n_out_chs=19, base_chs=16):
     super().__init__()
     self.n_ip_chs = n_ip_chs
     self.n_out_chs = n_out_chs
@@ -120,8 +120,8 @@ if __name__ == '__main__':
   os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
   print('*********************Model Summary***********************')
-  # model=  reconst_auto_encoder()
-  model=  denoise_auto_encoder()
+  model=  reconst_auto_encoder()
+  # model=  denoise_auto_encoder()
   if torch.cuda.is_available(): 
     model = model.cuda()
 

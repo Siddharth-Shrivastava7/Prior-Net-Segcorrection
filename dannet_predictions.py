@@ -24,7 +24,7 @@ from torchsummary import summary
 
 parser = argparse.ArgumentParser() 
 
-parser.add_argument("--gpu_id", type=str, default='1',
+parser.add_argument("--gpu_id", type=str, default='5',
                         help="GPU ID") 
 parser.add_argument("--num_classes", type=int, default=19,
                         help="num classes (default: 19)")  
@@ -36,31 +36,35 @@ parser.add_argument("--restore_light_path", type=str, default='/home/sidd_s/scra
                         help='Dannet pre-trained light net model path') 
 parser.add_argument("--data_dir", type=str, default='/home/sidd_s/scratch/dataset',
                         help='train data directory') 
-parser.add_argument("--data_list", type=str, default='./dataset/list/acdc/acdc_valrgb.txt',
-                        choices = ['./dataset/list/acdc/acdc_valrgb.txt', './dataset/list/acdc/acdc_trainrgb.txt'],help='list of names of validation files')  
+# parser.add_argument("--data_list", type=str, default='./dataset/list/acdc/acdc_valrgb.txt',
+#                         choices = ['./dataset/list/acdc/acdc_valrgb.txt', './dataset/list/acdc/acdc_trainrgb.txt'],help='list of names of validation files')  
 parser.add_argument("--worker", type=int, default=4)   
 parser.add_argument("--set", type=str, default='val')    
-parser.add_argument("--img_size", type=int, default=1024,  # may be req 
-                        help="size of image or label, which is to be trained")    
+# parser.add_argument("--img_size", type=int, default=1024,  # may be req 
+#                         help="size of image or label, which is to be trained")    
 
 args = parser.parse_args()
 
 def init_data(args): 
     loader = data.DataLoader(
-            BaseDataSet(args, args.data_dir, args.data_list, args.num_classes, ignore_label=255, set=args.set),
+            BaseDataSet(args, args.data_dir, args.num_classes, ignore_label=255, set=args.set),
             batch_size=1, shuffle=True, num_workers=args.worker, pin_memory=True)  
     return loader
     
 class BaseDataSet(data.Dataset): 
-    def __init__(self, args, root, list_path, num_class, ignore_label=255, set='val'): 
+    def __init__(self, args, root, num_class, ignore_label=255, set='val'): 
 
-        self.root = root 
-        self.list_path = list_path
+        self.root = root  
         self.set = set
         self.num_class = num_class 
         self.ignore_label = ignore_label
         self.args = args  
         self.img_ids = []  
+        
+        if self.args.set == 'val':
+            self.list_path = './dataset/list/acdc/acdc_valrgb.txt'  
+        else: 
+            self.list_path = './dataset/list/acdc/acdc_trainrgb.txt'
 
         with open(self.list_path) as f: 
             for item in f.readlines(): 
@@ -113,13 +117,14 @@ class BaseDataSet(data.Dataset):
             else: 
                 image = Image.open(datafiles["img"]).convert('RGB') 
                 
-                transforms_compose_img = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size)), transforms.ToTensor(), transforms.Normalize(*mean_std)]) 
+                transforms_compose_img = transforms.Compose([transforms.ToTensor(), transforms.Normalize(*mean_std)]) 
+                # transforms_compose_img = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size)), transforms.ToTensor(), transforms.Normalize(*mean_std)])
                 img_trans = transforms_compose_img(image) 
                 image = torch.tensor(np.array(img_trans)).float() 
                 
-                transforms_compose_label = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size),interpolation=Image.NEAREST)]) 
+                # transforms_compose_label = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size),interpolation=Image.NEAREST)]) 
                 label = Image.open(datafiles["label"]) 
-                label = transforms_compose_label(label)   
+                # label = transforms_compose_label(label)   
                 label = torch.tensor(np.array(label))    
                     
         except: 
@@ -208,23 +213,26 @@ class BaseTrainer(object):
                 else:
                     _, output2 = self.da_model(enhancement)
 
-            if self.args.set == 'val':
-                weights = torch.log(torch.FloatTensor(
-                    [0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341, 0.00207795, 0.0055127, 0.15928651,
-                    0.01157818, 0.04018982, 0.01218957, 0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,
-                    0.00413907])).cuda()
-                weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.16 + 1.0
-                weights_prob = weights.expand(output2.size()[0], output2.size()[3], output2.size()[2], 19)
-                weights_prob = weights_prob.transpose(1, 3)
-                output2 = output2 * weights_prob
-                output2 = self.interp_whole(output2).cpu().numpy()
+            ## similar o/p for both val and train going with
+            
+            # if self.args.set == 'val':
+            #     weights = torch.log(torch.FloatTensor(
+            #         [0.36869696, 0.06084986, 0.22824049, 0.00655399, 0.00877272, 0.01227341, 0.00207795, 0.0055127, 0.15928651,
+            #         0.01157818, 0.04018982, 0.01218957, 0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,
+            #         0.00413907])).cuda()
+            #     weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.16 + 1.0
+            #     weights_prob = weights.expand(output2.size()[0], output2.size()[3], output2.size()[2], 19)
+            #     weights_prob = weights_prob.transpose(1, 3)
+            #     output2 = output2 * weights_prob
+            #     output2 = self.interp_whole(output2).cpu().numpy()
 
-            else:
-                ## in training have to apply weighted cross entropy loss
-                ## so passing the input as it is
+            # else:
+            #     ## in training have to apply weighted cross entropy loss
+            #     ## so passing the input as it is
                 
-                output2 = self.interp(output2).cpu().numpy()
-
+            #     output2 = self.interp(output2).cpu().numpy() 
+            
+            output2 = self.interp_whole(output2).cpu().numpy() 
             seg_pred = torch.tensor(output2) 
             # print(pred.shape)  
             seg_pred = F.softmax(seg_pred, dim=1) 
@@ -244,7 +252,6 @@ class BaseTrainer(object):
             path_img = os.path.join(self.args.data_dir, 'acdc_trainval/rgb_anon/night', 'dannet_pred', self.args.set, name)
             dannet_pred_img.save(path_img)
                          
-        
 
 class predictor(BaseTrainer):
     def __init__(self, args):
@@ -253,7 +260,7 @@ class predictor(BaseTrainer):
         self.da_model = self.da_model.eval() 
         self.lightnet = self.lightnet.eval() 
         self.interp_whole = nn.Upsample(size=(1080, 1920), mode='bilinear', align_corners=True)
-        self.interp = nn.Upsample(size=(self.args.img_size, self.args.img_size), mode='bilinear', align_corners=True)
+        # self.interp = nn.Upsample(size=(self.args.img_size, self.args.img_size), mode='bilinear', align_corners=True)
 
     def predict(self):        
         self.validate() 

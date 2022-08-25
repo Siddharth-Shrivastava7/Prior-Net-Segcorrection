@@ -65,7 +65,7 @@ parser.add_argument("--learning_rate", '-lr', type=float, default=3e-4, # may be
                         help="learning rate for trainig prior net") 
 parser.add_argument("--momentum", '-m', type=float, default=0.9, 
                         help="momentum for sgd optimiser") 
-parser.add_argument("--weight_decay", '-wd', type=float, default=0.0005,
+parser.add_argument("--weight_decay", '-wd', type=float, default=0.05, # increased weight decay L2 norm
                     help="weight_decay for sgd optimiser") 
 parser.add_argument("--train_data_dir", '-tr_dr', type=str, default='/home/sidd_s/scratch/dataset',
                         help='train data directory') 
@@ -82,7 +82,7 @@ parser.add_argument("--train_dataset", '-tr_nm', type=str, default='synthetic_ma
 parser.add_argument("--val_dataset", '-val_nm', type=str, default='synthetic_manual_val_label',
                         choices = ['acdc_val_label', 'synthetic_manual_val_label', 'synthetic_acdc_val_label', 'dannet_pred_val'], help='valditation datset name') 
 parser.add_argument("--print_freq", type=int, default=1)  
-parser.add_argument("--epochs", type=int, default=700)   # may be req 
+parser.add_argument("--epochs", type=int, default=1500)   # may be req 
 parser.add_argument("--snapshot", type=str, default='../scratch/saved_models/acdc/dannet',
                         help='model saving directory')   
 parser.add_argument("--exp", '-e', type=int, default=1, help='which exp to run')                     
@@ -111,31 +111,50 @@ parser.add_argument("--augment",action='store_true', default=False,
                         help="using augmentation during training") 
 parser.add_argument("--small_model",action='store_true', default=False,
                         help="using augmentation during training")  ## denoising auto encoder (thinking of...let's seeee)
-
-
+parser.add_argument("--mask_main_path", type=str, default='/home/sidd_s/scratch/dataset/random_bin_masks/',
+                        help='random binary masks path for using in augmentation on the fly')
+parser.add_argument("--random_bin_augment",action='store_true', default=False,
+                        help="using augmentation during training")   
+parser.add_argument("--num_random_masks", type=int, default=4,  # may be req 
+                        help="num_random_masks_for_augment")  
 args = parser.parse_args()
 
 ## dataset init 
 def init_train_data(args): 
-    
     trainloader = data.DataLoader(
             BaseDataSet(args, args.train_data_dir, args.train_data_list, args.train_dataset, args.num_classes, ignore_label=255, set='train'),
             batch_size=args.batch_size, shuffle=True, num_workers=args.worker, pin_memory=True) 
-    
     return trainloader 
 
 ## dataset init 
 def init_val_data(args): 
-
     valloader = data.DataLoader(
             BaseDataSet(args, args.val_data_dir, args.val_data_list, args.val_dataset, args.num_classes, ignore_label=255, set='val'),
             batch_size=1, shuffle=True, num_workers=args.worker, pin_memory=True)
-
     return valloader
+
+def perturb_gt_gen(mask_path, gt_path, pred_path, set):
+    mask =  Image.open(mask_path).convert('L')
+    gt = Image.open(gt_path)  
+    pred = Image.open(pred_path) 
+    if set == 'train':
+        mask = np.array(mask)
+        mask[mask==255] = 1
+        gt = np.array(gt.resize((mask.shape[0],mask.shape[1]),Image.ANTIALIAS))
+        pred = np.array(pred.resize((mask.shape[0],mask.shape[1]),Image.ANTIALIAS))
+    else:
+        gt = np.array(gt)
+        pred = np.array(pred)
+        mask = np.array(mask.resize((gt.shape[1], gt.shape[0]), Image.NEAREST)) # strange clouds of dimensions
+        mask[mask==255] = 1 
     
+    gt[mask==1] = pred[mask==1] 
+    per_gt = Image.fromarray(gt)
+    return per_gt
+
 
 class BaseDataSet(data.Dataset): 
-    def __init__(self, args, root, list_path,dataset, num_class, ignore_label=255, set='val'): 
+    def __init__(self, args, root, list_path,dataset, num_class, ignore_label=255, set='val'):
 
         self.root = root 
         self.list_path = list_path
@@ -145,6 +164,7 @@ class BaseDataSet(data.Dataset):
         self.ignore_label = ignore_label
         self.args = args  
         self.img_ids = []  
+        self.fixed = 0
 
         with open(self.list_path) as f: 
             for item in f.readlines(): 
@@ -190,25 +210,31 @@ class BaseDataSet(data.Dataset):
                 nm = name
                 for r in replace: 
                     nm = nm.replace(*r) 
-                label_file = os.path.join(self.root, nm)    
-                self.files.append({
-                        "img": img_file,
-                        "label":label_file,
-                        "name": name
-                    })
-            
+                label_file = os.path.join(self.root, nm) 
+                if self.args.random_bin_augment and (not self.set == 'val'): 
+                    for num in range(self.args.num_random_masks):
+                        self.files.append({
+                                "img": img_file,
+                                "label":label_file,
+                                "name": name
+                            })
+                else: 
+                    self.files.append({
+                                "img": img_file,
+                                "label":label_file,
+                                "name": name
+                            }) 
+                        
     def __len__(self):
         return len(self.files) 
     
     def __getitem__(self, index): 
         datafiles = self.files[index]
         name = datafiles["name"]
-        
         transforms_compose_label = transforms.Compose([transforms.Resize((self.args.img_size,self.args.img_size),interpolation=Image.NEAREST)])     
         mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  ## image net mean and std  
         try:  
             if self.dataset == 'acdc_train_label' or self.dataset == 'acdc_val_label': 
-                
                 transforms_compose_img = transforms.Compose([
                                 transforms.Resize((540, 960)),
                                 transforms.ToTensor(),
@@ -236,13 +262,34 @@ class BaseDataSet(data.Dataset):
                     label = torch.tensor(np.array(label))   
             
             elif ('synthetic' and 'manual') or ('dannet' and 'pred') in self.dataset:  
-                image = Image.open(datafiles["img"]).convert('RGB') 
-                label = Image.open(datafiles["label"]) 
+                label = Image.open(datafiles["label"])  
+                if self.args.random_bin_augment and (not self.set == 'val'):
+                    # gt path will be 
+                    gt_path = datafiles["label"].replace('_gt_labelTrainIds','_gt_labelColor') 
+                    ## mask paths 
+                    mask_lst = os.listdir(args.mask_main_path) 
+                    ## random bin mask path  
+                    rand = random.randint(0, 49) #inclusive  
+                    mask_path = os.path.join(args.mask_main_path, mask_lst[rand])  
+                    per_gt = perturb_gt_gen(mask_path, gt_path, pred_path = datafiles['img'], set = self.set)      
+                    image = per_gt 
+                elif self.args.random_bin_augment and (self.set == 'val'):
+                    # gt path will be 
+                    gt_path = datafiles["label"].replace('_gt_labelTrainIds','_gt_labelColor') 
+                    ## mask paths 
+                    mask_lst = os.listdir(args.mask_main_path) 
+                    ## fixed mask (depending upon the index) 
+                    self.fixed  =self.fixed + 1
+                    fixed = (self.fixed) % len(mask_lst) 
+                    mask_path = os.path.join(args.mask_main_path, mask_lst[fixed])  
+                    per_gt = perturb_gt_gen(mask_path, gt_path, pred_path = datafiles['img'], set = self.set)      
+                    image = per_gt
+                else: 
+                    image = Image.open(datafiles["img"]).convert('RGB') 
                 
                 if self.args.norm: 
                     transforms_compose_img = transforms_compose_img = transforms.Compose([ 
-                                transforms.ToTensor(),
-                                transforms.Normalize(*mean_std) ## use only in training 
+                                transforms.Normalize(*mean_std)
                             ]) 
                     image = transforms_compose_img(image)  
                     if self.set == 'val': 
@@ -267,7 +314,6 @@ class BaseDataSet(data.Dataset):
                         #             joint_transforms.Resize(args.img_size),
                         #             joint_transforms.RandomHorizontallyFlip()] 
                         # joint_transform_mod = joint_transforms.Compose(joint_transforms_list) 
-                        
                         joint_transform_mod = joint_transforms.RandomHorizontallyFlip()  
                         image, label = joint_transform_mod(image, label)  
                         transforms_compose_img = transforms.Compose([
@@ -288,7 +334,6 @@ class BaseDataSet(data.Dataset):
                         label = transforms_compose_label(label) 
                         label = torch.tensor(np.array(label))   
                      
-                                     
             elif 'synthetic' and 'acdc' in self.dataset: 
                 transforms_compose_img = transforms.Compose([
                         transforms.Resize((self.args.img_size, self.args.img_size)),
@@ -306,7 +351,6 @@ class BaseDataSet(data.Dataset):
                     label = transforms_compose_label(label) 
                     label = torch.tensor(np.array(label))   
     
-        
         except: 
             # print('**************') 
             print(index)
@@ -314,39 +358,6 @@ class BaseDataSet(data.Dataset):
             return self.__getitem__(index) 
 
         return image, label, name
-
-# ############mean and std of the dataset#####################
-
-# testdataset = BaseDataSet(args, args.train_data_dir, args.train_data_list, args.train_dataset, args.num_classes, ignore_label=255, set='train')
-# testloader = data.DataLoader(
-#     testdataset,
-#     batch_size=len(testdataset), shuffle=True, num_workers=args.worker, pin_memory=True)
-
-
-# def mean_std(loader):
-#     images, _ , _ = next(iter(loader))
-#     # shape of images = [b,c,w,h]
-    
-#     mean, std = images.mean([0,2,3]), images.std([0,2,3]) 
-#     return mean, std
-
-# mean, std = mean_std(testloader)
-# print("data mean and data std: \n", mean, std) 
-
-# ## image net mean and std  
-
-# mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  
-# mean_std = torch.tensor(mean_std) 
-
-# diff_mean, diff_std = abs(mean_std[0] - mean) , abs(mean_std[1] - std)
-# print("diff in mean and diff in std: \n", diff_mean, diff_std)
-# #  tensor([0.1349, 0.0806, 0.0136]) tensor([0.0575, 0.0746, 0.0430]) for val
-# #  tensor([0.1125, 0.0749, 0.0312]) tensor([0.0474, 0.0707, 0.0355]) for train 
-
-# breakpoint()
-
-##############mean and std of the dataset######################
-
        
 def init_model(args): 
     if args.small_model: 
@@ -551,7 +562,7 @@ class Trainer(BaseTrainer):
         image , seg_label, name = batch         
         
         if self.args.train_dataset == 'acdc_train_label':
-            ## perturbation 
+
             with torch.no_grad():
                 r = self.lightnet(image.cuda())  
                 enhancement = image.cuda() + r
@@ -563,7 +574,6 @@ class Trainer(BaseTrainer):
             output2 = self.interp(output2).cpu().numpy() 
             seg_pred = torch.tensor(output2) 
 
-            # print(pred.shape)  
             seg_pred = F.softmax(seg_pred, dim=1)       
 
             ## converting the gt seglabel with train ids into onehot matrix 
@@ -629,7 +639,7 @@ class Trainer(BaseTrainer):
                                                 0.00207795, 0.0055127, 0.15928651, 0.01157818, 0.04018982, 0.01218957,
                                                 0.00135122, 0.06994545, 0.00267456, 0.00235192, 0.00232904, 0.00098658,
                                                     0.00413907])).cuda() 
-                # 
+                # weights 
                 weights = (torch.mean(weights) - weights) / torch.std(weights) * 0.05 + 1.0  
             
             loss = nn.CrossEntropyLoss(ignore_index=255, weight=weights) 

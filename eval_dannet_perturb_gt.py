@@ -32,7 +32,7 @@ from dataset.network.loss import StaticLoss
 
 parser = argparse.ArgumentParser() 
 
-parser.add_argument("--gpu_id", type=str, default='7',
+parser.add_argument("--gpu_id", type=str, default='0',
                         help="GPU ID") 
 available_models = sorted(name for name in network.modeling.__dict__ if name.islower() and \
                               not (name.startswith("__") or name.startswith('_')) and callable(
@@ -63,14 +63,14 @@ parser.add_argument("--patch_size", type=int, default=10, # may be req
                         help="size of square patch to be perturbed")
 parser.add_argument("--val_data_dir", '-val_dr', type=str, default='/home/sidd_s/scratch/dataset',
                         help='train data directory') 
-parser.add_argument("--val_data_list", '-val_dr_lst', type=str, default='./dataset/list/acdc/acdc_valrgb.txt',
-                        choices = ['./dataset/list/acdc/acdc_valrgb.txt'],help='list of names of validation files')  
+parser.add_argument("--val_data_list", '-val_dr_lst', type=str, default='/home/sidd_s/Prior-Net-Segcorrection/dataset/list/acdc/acdc_valrgb.txt',
+                        choices = ['/home/sidd_s/Prior-Net-Segcorrection/dataset/list/acdc/acdc_valrgb.txt'],help='list of names of validation files')  
 parser.add_argument("--worker", type=int, default=4)   
 parser.add_argument("--val_dataset", '-val_nm', type=str, default='synthetic_manual_acdc_val_label',
                         choices = ['acdc_val_label', 'synthetic_manual_acdc_val_label', 'dannet_pred'], help='valditation datset name') 
 parser.add_argument("--print_freq", type=int, default=1)  
 parser.add_argument("--epochs", type=int, default=500)   # may be req 
-parser.add_argument("--snapshot", type=str, default='../scratch/saved_models/acdc/dannet',
+parser.add_argument("--snapshot", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet',
                         help='model saving directory')   
 parser.add_argument("--exp", '-e', type=int, default=1, help='which exp to run')                     
 parser.add_argument("--method_eval", type=str, default='dannet_perturb_gt',
@@ -81,7 +81,7 @@ parser.add_argument("--color_map", action='store_true', default=False,
                         help="color_mapping project evalutation")
 parser.add_argument("--direct", action='store_true', default=False,
                         help="same colormap as that of cityscapes where perturbation is taking place")
-parser.add_argument("--save_path", type=str, default='synthetic_new_manual_dannet_20n_100p',
+parser.add_argument("--save_path", type=str, default='synthetic_new_manual_dannet_50n_100p',
                         help='evalutating technique')
 parser.add_argument("--norm",action='store_true', default=False,
                         help="normalisation of the image")
@@ -226,7 +226,6 @@ class BaseDataSet(data.Dataset):
     
         try:  
             if self.dataset in ['acdc_train_label', 'acdc_val_label']: 
-                
                 ## image for transforming  
                 transforms_compose_img = transforms.Compose([
                     transforms.Resize((540, 960)),
@@ -249,29 +248,26 @@ class BaseDataSet(data.Dataset):
                                 transforms.ToTensor(),
                                 transforms.Normalize(*mean_std) ## use only in training 
                             ]) 
-                    image_t = transforms_compose_img(image)   
-                    image_t = torch.tensor(np.array(image_t)).float() 
-                    image = torch.tensor(np.array(image)).float()
-                    
                 else: 
-                    image = torch.tensor(np.array(image)).float()
+                    transforms_compose_img = transforms.Compose([ 
+                                transforms.ToTensor()
+                            ]) 
+                    
+                image_t = transforms_compose_img(image)   
+                image_t = torch.tensor(np.array(image_t)).float() 
+                image = torch.tensor(np.array(image)).float()
                 
                 label = Image.open(datafiles["label"]) 
                 label = torch.tensor(np.array(label))
                 
-                if self.args.norm: 
-                    return image_t, image, label, name
+                # if self.args.norm: 
+                #     return image_t, image, label, name
                     
-                
-                return image, label, name
                                           
-        except: 
-            print('**************') 
-            print(index)
-            index = index - 1 if index > 0 else index + 1 
-            return self.__getitem__(index) 
+        except Exception as e: 
+            print(e)
 
-        return image, label, name
+        return image_t, image, label, name
                 
 
 def init_model(args): 
@@ -284,11 +280,10 @@ def init_model(args):
     if args.multigpu:
         model = nn.DataParallel(model)
     params = torch.load(os.path.join('/home/sidd_s/scratch/saved_models/acdc/dannet/',args.restore_from))
-    model.load_state_dict(params)
-    print('----------Model initialize with weights from-------------: {}'.format(args.restore_from))
     model.eval().cuda() 
     print('Mode --> Eval') 
-    
+    model.load_state_dict(params)
+    print('----------Model initialize with weights from-------------: {}'.format(args.restore_from)) 
     return model
 
 def print_iou(iou, acc, miou, macc):
@@ -386,11 +381,8 @@ def color_to_label(img_synthetic, args):
     img_label = np.zeros((img_height, img_width), dtype=np.uint8) 
     for row in range(img_height):
         for col in range(img_width):
-            img_label[row, col] = np.array(inv_manual_dd[str(img[row,col].astype('int64').tolist())])  
-
+            img_label[row, col] = np.array(inv_manual_dd[str(img[row,col].astype('int64').tolist())])   
     return img_label
-     
-
 
 class CrossEntropy2d(nn.Module):
 
@@ -526,15 +518,9 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights):
                 C,H,W = output.shape    
                 
             elif 'synthetic' or 'dannet' in args.val_dataset: 
-                if args.norm:  
-                    image_t, image, seg_label, _ = batch  ## chg 
-                    image = image.permute(0, 3, 1, 2) 
-                    synthetic_input_perturb = image_t.detach().clone() 
-                else: 
-                    image , seg_label, _ = batch   
-                    synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()                         
-                       
-                
+                image_t ,image , seg_label, _ = batch   
+                synthetic_input_perturb = image.detach().clone() 
+      
                 if args.ignore_classes: 
                     # masking  
                     ignore_classes = json.loads(args.ignore_classes[0])  
@@ -545,7 +531,8 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights):
                     ip_label_clone = ip_label.detach().clone() 
                     for ig_cl in ignore_classes:
                         ip_label[ip_label==ig_cl] = 255 
-                    synthetic_input_perturb = label_img_to_color(ip_label)  
+                    synthetic_input_perturb = label_img_to_color(ip_label)   
+                    
                     synthetic_input_perturb = torch.tensor(synthetic_input_perturb).unsqueeze(dim=0).permute(0,3,1,2)
                 
                 ## output from priornet 
@@ -740,14 +727,9 @@ class BaseTrainer(object):
                     seg_pred_tensor = gt_3ch.permute(0, 3, 1, 2).detach().clone()  
             
             elif 'synthetic' or 'dannet' in self.args.val_dataset:     
-                if self.args.norm:  
-                    image_t, image, seg_label, name = batch  ## chg 
-                    image = image.permute(0, 3, 1, 2) 
-                    synthetic_input_perturb = image_t.detach().clone() 
-                else: 
-                    image , seg_label, name = batch  ## chg   
-                    synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()                         
-                    
+                image_t, image, seg_label, name = batch  ## chg   
+                synthetic_input_perturb = image.permute(0, 3, 1, 2).detach().clone()                         
+
                 nm = name[0].split('/')[-1]  
                 
                 if args.ignore_classes:
@@ -761,6 +743,7 @@ class BaseTrainer(object):
                     for ig_cl in ignore_classes:
                         ip_label[ip_label==ig_cl] = 255 
                     synthetic_input_perturb = label_img_to_color(ip_label)  
+                    print(np.unique(synthetic_input_perturb))  
                     synthetic_input_perturb = torch.tensor(synthetic_input_perturb).unsqueeze(dim=0).permute(0,3,1,2)     
             
             ## changing name    

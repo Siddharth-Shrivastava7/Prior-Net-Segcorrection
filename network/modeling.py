@@ -169,8 +169,7 @@ def deeplabv3plus_resnet34(num_classes=21, output_stride=8, pretrained_backbone=
 
 
 def deeplabv3plus_resnet50(num_classes=21, output_stride=8, pretrained_backbone=True, num_ip_channels=3):
-    """Constructs a DeepLabV3 model with a ResNet-50 backbone.
-
+    """Constructs a DeepLabV3 model with a ResNet-50 backbone.  
     Args:
         num_classes (int): number of classes.
         output_stride (int): output stride for deeplab.

@@ -38,7 +38,6 @@ def l2_regularisation(m):
     return l2_reg
 
 ## defining up and down conv blocks here only 
-
 class DownConvBlock(nn.Module):
     """
     A block of three convolutional layers where each layer is followed by a non-linear activation function
@@ -51,16 +50,18 @@ class DownConvBlock(nn.Module):
         if pool:
             layers.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0, ceil_mode=True))
 
-        layers.append(nn.Conv2d(input_dim, output_dim, kernel_size=3, stride=1, padding=int(padding)))
-        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Conv2d(input_dim, output_dim, kernel_size=3, stride=1, padding=int(padding))) 
+        layers.append(nn.BatchNorm2d(output_dim))
+        layers.append(nn.ReLU(inplace=True)) 
         layers.append(nn.Conv2d(output_dim, output_dim, kernel_size=3, stride=1, padding=int(padding)))
-        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.BatchNorm2d(output_dim)) 
+        layers.append(nn.ReLU(inplace=True)) 
         layers.append(nn.Conv2d(output_dim, output_dim, kernel_size=3, stride=1, padding=int(padding)))
+        layers.append(nn.BatchNorm2d(output_dim))
         layers.append(nn.ReLU(inplace=True))
-
         self.layers = nn.Sequential(*layers)
 
-        self.layers.apply(init_weights)
+        self.layers.apply(init_weights) 
 
     def forward(self, patch):
         return self.layers(patch)
@@ -101,8 +102,8 @@ class Unet(nn.Module):
     num_filters: list with the amount of filters per layer
     apply_last_layer: boolean to apply last layer or not (not used in Probabilistic UNet)
     padidng: Boolean, if true we pad the images with 1 so that we keep the same dimensions
-    """
-    
+    """ 
+
     def __init__(self, input_channels, num_classes, num_filters, initializers, apply_last_layer=True, padding=True):
         super(Unet, self).__init__()
         self.input_channels = input_channels
@@ -111,8 +112,8 @@ class Unet(nn.Module):
         self.padding = padding
         self.activation_maps = []
         self.apply_last_layer = apply_last_layer
-        self.contracting_path = nn.ModuleList()
-
+        self.contracting_path = nn.ModuleList() 
+        
         for i in range(len(self.num_filters)):
             input = self.input_channels if i == 0 else output
             output = self.num_filters[i]
@@ -120,7 +121,7 @@ class Unet(nn.Module):
             if i == 0:
                 pool = False
             else:
-                pool = True
+                pool = True 
 
             self.contracting_path.append(DownConvBlock(input, output, initializers, padding, pool=pool))
 
@@ -137,7 +138,6 @@ class Unet(nn.Module):
             #nn.init.kaiming_normal_(self.last_layer.weight, mode='fan_in',nonlinearity='relu')
             #nn.init.normal_(self.last_layer.bias)
 
-
     # def forward(self, x, val):
     def forward(self, x):
         blocks = []
@@ -147,8 +147,8 @@ class Unet(nn.Module):
                 blocks.append(x)
 
         for i, up in enumerate(self.upsampling_path):
-            x = up(x, blocks[-i-1])
-
+            x = up(x, blocks[-i-1]) 
+            
         del blocks
 
         #Used for saving the activations and plotting
@@ -169,4 +169,4 @@ class Unet(nn.Module):
 #     model = model.cuda()
 
 #   print(summary(model, (3, 1024, 1024))) 
-# # original 
+# original 

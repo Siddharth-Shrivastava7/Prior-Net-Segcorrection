@@ -1,5 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt 
+import random
 
 # n = 10
 # x = np.random.rand(n)
@@ -144,6 +145,17 @@ def create_label_colormap():
      
     return colormap
 
+def create_random_label_colormap():
+    """Creates a label colormap used in Cityscapes segmentation benchmark.
+    Returns:
+        A Colormap for visualizing segmentation results.
+    """ 
+    random_lst = [random.sample(range(1,256),3) for i in range(19)] 
+    random_lst.append([0,0,0]) # invalid region
+    random_colormap = np.array(random_lst, dtype=np.uint8)
+    
+    return random_colormap
+
 def label_to_color_image(label):
     """Adds color defined by the dataset colormap to the label.
     
@@ -163,9 +175,10 @@ def label_to_color_image(label):
         raise ValueError('Expect 2-D input label')
 
     colormap = create_label_colormap()
+    # colormap = create_random_label_colormap() # random colormap 
 
     if np.max(label) >= len(colormap):
-        raise ValueError('label value too large.')
+        raise ValueError('label value too large.') 
 
     return colormap[label]
 
